@@ -1,5 +1,6 @@
 """Service layer for MCP Gateway with validation and routing logic."""
 
+import inspect
 import uuid
 from typing import Any
 import httpx
@@ -51,6 +52,16 @@ def validate_payload_size(
 def generate_request_id() -> str:
     """Generate a unique request ID for tracing."""
     return str(uuid.uuid4())
+
+
+async def _maybe_await(result: object) -> None:
+    """Await async results while tolerating sync audit helpers.
+
+    Args:
+        result: Return value from an audit helper method.
+    """
+    if inspect.isawaitable(result):
+        await result
 
 
 async def invoke_tool(
@@ -139,20 +150,20 @@ async def invoke_tool(
             return response
             
         except BackendTimeoutError as e:
-            audit_ctx.mark_timeout()
+            await _maybe_await(audit_ctx.mark_timeout())
             raise
         except BackendUnavailableError as e:
-            audit_ctx.mark_error("BACKEND_UNAVAILABLE")
+            await _maybe_await(audit_ctx.mark_error("BACKEND_UNAVAILABLE"))
             raise
         except BackendError as e:
-            audit_ctx.mark_error(e.code)
+            await _maybe_await(audit_ctx.mark_error(e.code))
             raise
         except ToolNotFoundError as e:
-            audit_ctx.mark_error("TOOL_NOT_FOUND")
+            await _maybe_await(audit_ctx.mark_error("TOOL_NOT_FOUND"))
             raise
         except ToolNotAllowedError as e:
-            audit_ctx.mark_error("TOOL_NOT_ALLOWED")
+            await _maybe_await(audit_ctx.mark_error("TOOL_NOT_ALLOWED"))
             raise
         except PayloadTooLargeError as e:
-            audit_ctx.mark_error("PAYLOAD_TOO_LARGE")
+            await _maybe_await(audit_ctx.mark_error("PAYLOAD_TOO_LARGE"))
             raise

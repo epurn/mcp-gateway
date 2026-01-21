@@ -117,6 +117,6 @@
 ---
 
 ## Current Focus
-**Active Epic**: None (Core MVP Complete)
-**Next Story**: Verification and Release / Epic 9
+**Active Epic**: V1 Demo Tools (Calculator, Git Read-Only, Document Generation)
+**Next Story**: Seed and wire tool registry definitions for v1 demos
 

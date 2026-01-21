@@ -6,8 +6,10 @@ roles:
   admin:
     - "*"
   developer:
-    - "read_file"
-    - "write_file"
-    - "list_directory"
+    - "exact_compute"
+    - "git_readonly"
+    - "document_generate"
   viewer:
-    - "read_file"
+    - "exact_compute"
+    - "git_readonly"
+    - "document_generate"

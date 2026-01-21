@@ -1,0 +1,19 @@
+tools:
+  - name: "exact_compute"
+    description: "Deterministic high-precision arithmetic, statistics, and unit-safe calculations."
+    backend_url: "http://localhost:8091/mcp"
+    risk_level: "low"
+    required_roles: []
+    is_active: true
+  - name: "git_readonly"
+    description: "Read-only Git history, diff, blame, and search operations."
+    backend_url: "http://localhost:8092/mcp"
+    risk_level: "low"
+    required_roles: []
+    is_active: true
+  - name: "document_generate"
+    description: "Deterministic document generation for PDF/DOCX artifacts."
+    backend_url: "http://localhost:8093/mcp"
+    risk_level: "low"
+    required_roles: []
+    is_active: true

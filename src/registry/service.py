@@ -9,8 +9,9 @@ from cachetools import TTLCache
 from src.auth.models import AuthenticatedUser
 from src.auth.policy import check_tool_permission
 
-from .models import Tool
-from .repository import get_all_active_tools
+from .models import RiskLevel, Tool
+from .repository import get_all_active_tools, get_tool_by_name, create_tool
+from .config import load_tool_registry
 from .schemas import ToolResponse, ToolListResponse
 
 if TYPE_CHECKING:
@@ -24,6 +25,58 @@ _tool_cache: TTLCache[str, list[Tool]] = TTLCache(maxsize=1000, ttl=300)
 def clear_tool_cache() -> None:
     """Clear the tool cache. Useful after tool updates."""
     _tool_cache.clear()
+
+
+async def sync_tools_from_config(db: "AsyncSession", config_path: str | None = None) -> None:
+    """Ensure tool registry entries exist for the static config.
+
+    Args:
+        db: Async database session.
+        config_path: Optional path override for the tool registry config.
+    """
+    registry_config = load_tool_registry(config_path)
+    if not registry_config.tools:
+        return
+
+    seen_names: set[str] = set()
+    for tool in registry_config.tools:
+        if tool.name in seen_names:
+            raise ValueError(f"duplicate tool name in config: {tool.name}")
+        seen_names.add(tool.name)
+
+        existing = await get_tool_by_name(db, tool.name)
+        if existing is None:
+            await create_tool(
+                db=db,
+                name=tool.name,
+                description=tool.description,
+                backend_url=tool.backend_url,
+                risk_level=tool.risk_level,
+                required_roles=tool.required_roles or None,
+                is_active=tool.is_active,
+            )
+            continue
+
+        updated = False
+        if existing.description != tool.description:
+            existing.description = tool.description
+            updated = True
+        if existing.backend_url != tool.backend_url:
+            existing.backend_url = tool.backend_url
+            updated = True
+        if existing.risk_level.value != tool.risk_level:
+            existing.risk_level = RiskLevel(tool.risk_level)
+            updated = True
+        if (existing.required_roles or None) != (tool.required_roles or None):
+            existing.required_roles = tool.required_roles or None
+            updated = True
+        if existing.is_active != tool.is_active:
+            existing.is_active = tool.is_active
+            updated = True
+
+        if updated:
+            await db.commit()
+            await db.refresh(existing)
 
 
 async def get_all_tools_cached(db: "AsyncSession") -> list[Tool]:

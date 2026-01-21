@@ -11,30 +11,24 @@ roles:
     allowed_tools: ["*"]
     
   developer:
-    # Developers can use code and file tools
+    # Developers can use v1 demo tools
     allowed_tools:
-      - "read_file"
-      - "write_file"
-      - "search_code"
-      - "run_tests"
-      - "git_status"
-      - "git_diff"
+      - "exact_compute"
+      - "git_readonly"
+      - "document_generate"
     
   viewer:
-    # Viewers can only read
+    # Viewers can use read-only demo tools
     allowed_tools:
-      - "read_file"
-      - "search_code"
-      - "list_directory"
+      - "exact_compute"
+      - "git_readonly"
+      - "document_generate"
 
 # Workspace-specific overrides (optional)
 workspaces:
   production:
     # Restrict certain tools in production workspace
-    denied_tools:
-      - "write_file"
-      - "delete_file"
-      - "run_dangerous_command"
+    denied_tools: []
     
   sandbox:
     # Sandbox allows all tools for testing
@@ -42,13 +36,9 @@ workspaces:
 
 # Tool-specific settings
 tools:
-  run_dangerous_command:
-    # Require explicit admin role for dangerous commands
-    required_roles: ["admin"]
-    risk_tier: high
-    
-  write_file:
-    risk_tier: medium
-    
-  read_file:
+  exact_compute:
+    risk_tier: low
+  git_readonly:
+    risk_tier: low
+  document_generate:
     risk_tier: low

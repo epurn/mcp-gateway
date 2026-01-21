@@ -3,13 +3,14 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from .config import get_settings
-from .database import engine, Base
+from .database import engine, Base, AsyncSessionLocal
 from .auth.exceptions import (
     AuthenticationError,
     AuthorizationError,
     MCPGatewayError
 )
 from .registry import router as registry_router
+from .registry.service import sync_tools_from_config, clear_tool_cache
 from .registry.models import Tool  # noqa: F401 - Import so Base.metadata sees it
 from src.gateway.router import router as gateway_router
 from src.jobs.router import router as jobs_router
@@ -32,6 +33,10 @@ async def lifespan(app: FastAPI):
     # Startup: Create tables (simplistic migration for MVP)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    async with AsyncSessionLocal() as session:
+        await sync_tools_from_config(session)
+    clear_tool_cache()
     
     # Initialize global HTTP client for connection pooling
     # timeouts=None removes global default timeout, allowing per-request timeouts

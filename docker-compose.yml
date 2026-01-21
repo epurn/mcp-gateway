@@ -12,6 +12,11 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+  calculator:
+    build:
+      context: ./tools/calculator
+    ports:
+      - "8091:8000"
 
 volumes:
   postgres_data:
