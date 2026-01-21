@@ -1,0 +1,13 @@
+# Example Authorization Policy
+# Note: Currently, roles are managed via the database/auth claims.
+# This file is a template for future static policy definitions.
+
+roles:
+  admin:
+    - "*"
+  developer:
+    - "read_file"
+    - "write_file"
+    - "list_directory"
+  viewer:
+    - "read_file"

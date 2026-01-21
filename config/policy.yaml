@@ -1,0 +1,54 @@
+# MCP Gateway Authorization Policy
+# This file defines which roles/groups can access which tools
+
+# Default policy: deny all unless explicitly allowed
+default_action: deny
+
+# Role-based tool permissions
+roles:
+  admin:
+    # Admins can access all tools
+    allowed_tools: ["*"]
+    
+  developer:
+    # Developers can use code and file tools
+    allowed_tools:
+      - "read_file"
+      - "write_file"
+      - "search_code"
+      - "run_tests"
+      - "git_status"
+      - "git_diff"
+    
+  viewer:
+    # Viewers can only read
+    allowed_tools:
+      - "read_file"
+      - "search_code"
+      - "list_directory"
+
+# Workspace-specific overrides (optional)
+workspaces:
+  production:
+    # Restrict certain tools in production workspace
+    denied_tools:
+      - "write_file"
+      - "delete_file"
+      - "run_dangerous_command"
+    
+  sandbox:
+    # Sandbox allows all tools for testing
+    allowed_tools: ["*"]
+
+# Tool-specific settings
+tools:
+  run_dangerous_command:
+    # Require explicit admin role for dangerous commands
+    required_roles: ["admin"]
+    risk_tier: high
+    
+  write_file:
+    risk_tier: medium
+    
+  read_file:
+    risk_tier: low

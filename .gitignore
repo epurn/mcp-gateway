@@ -1,0 +1,42 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.env
+.env.local
+.env.*
+
+# Logs
+*.log
+logs/
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build/Dist
+dist/
+build/
+*.egg-info/
+
+# Testing & Coverage
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+coverage.txt
+.pytest_cache/
+
+# Agent/Brain
+.agent/
+brain/
+*.gemini/
+
+# OS
+.DS_Store
+Thumbs.db
