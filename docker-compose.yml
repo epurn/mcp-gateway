@@ -1,6 +1,4 @@
-version: '3.8'
-
-services:
+﻿services:
   db:
     image: postgres:15-alpine
     restart: always
@@ -8,15 +6,41 @@ services:
       POSTGRES_USER: mcp_user
       POSTGRES_PASSWORD: mcp_password
       POSTGRES_DB: mcp_gateway
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - mcp-internal
+
+  gateway:
+    build:
+      context: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://mcp_user:mcp_password@db:5432/mcp_gateway
+    depends_on:
+      - db
+      - calculator
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config:/app/config:ro
+    networks:
+      - mcp-public
+      - mcp-internal
+
   calculator:
     build:
       context: ./tools/calculator
-    ports:
-      - "8091:8000"
+    restart: unless-stopped
+    networks:
+      - mcp-internal
 
 volumes:
   postgres_data:
+
+networks:
+  mcp-public:
+  mcp-internal:
+    internal: true
