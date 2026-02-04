@@ -1,6 +1,6 @@
 ﻿services:
   db:
-    image: postgres:15-alpine
+    image: ankane/pgvector:v0.5.1 # PostgreSQL 16 with pgvector extension
     restart: always
     environment:
       POSTGRES_USER: mcp_user
@@ -8,15 +8,17 @@
       POSTGRES_DB: mcp_gateway
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d # Auto-run initialization scripts
     networks:
       - mcp-internal
 
   gateway:
     build:
-      context: .
+      context: ..
+      dockerfile: docker/Dockerfile
     restart: unless-stopped
     env_file:
-      - .env
+      - ../.env
     environment:
       DATABASE_URL: postgresql+asyncpg://mcp_user:mcp_password@db:5432/mcp_gateway
     depends_on:
@@ -25,20 +27,23 @@
     ports:
       - "8000:8000"
     volumes:
-      - ./config:/app/config:ro
+      - ../config:/app/config:ro
+      - ../src:/app/src
+      - ../scripts:/app/scripts
     networks:
       - mcp-public
       - mcp-internal
 
   calculator:
     build:
-      context: ./tools/calculator
+      context: ../tools/calculator
     restart: unless-stopped
     networks:
       - mcp-internal
 
 volumes:
   postgres_data:
+
 
 networks:
   mcp-public:

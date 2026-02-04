@@ -11,16 +11,13 @@ roles:
     allowed_tools: ["*"]
     
   developer:
-    # Developers can use v1 demo tools
-    allowed_tools:
-      - "exact_compute"
-      - "git_readonly"
-      - "document_generate"
+    # Developers can use all tools for testing
+    allowed_tools: ["*"]
     
   viewer:
     # Viewers can use read-only demo tools
     allowed_tools:
-      - "exact_compute"
+      - "exact_calculate"
       - "git_readonly"
       - "document_generate"
 
@@ -36,7 +33,7 @@ workspaces:
 
 # Tool-specific settings
 tools:
-  exact_compute:
+  exact_calculate:
     risk_tier: low
   git_readonly:
     risk_tier: low

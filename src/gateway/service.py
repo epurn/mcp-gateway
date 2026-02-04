@@ -147,6 +147,10 @@ async def invoke_tool(
                 user_id=user.user_id,
             )
             
+            # Map tool_id back to response for usage tracking
+            if tool:
+                response.tool_id = tool.id
+            
             return response
             
         except BackendTimeoutError as e:

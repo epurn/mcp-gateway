@@ -671,6 +671,147 @@ async def health() -> Dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/mcp/tools")
+async def list_mcp_tools() -> dict[str, list[dict]]:
+    """Return available MCP tools with their schemas."""
+    return {
+        "tools": [
+            {
+                "name": "exact_calculate",
+                "description": "Perform exact arithmetic operations (add, subtract, multiply, divide) with configurable precision",
+                "category": "math",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "operator": {
+                            "type": "string",
+                            "enum": ["add", "sub", "mul", "div"],
+                            "description": "Arithmetic operation to perform"
+                        },
+                        "operands": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "minItems": 1,
+                            "description": "Decimal numbers as strings"
+                        },
+                        "precision": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "description": "Significant digits (default: 28)"
+                        }
+                    },
+                    "required": ["operator", "operands"]
+                }
+            },
+            {
+                "name": "exact_statistics",
+                "description": "Calculate exact statistics (mean, median, variance, standard deviation, min, max, sum, count) over decimal values",
+                "category": "math",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "function": {
+                            "type": "string",
+                            "enum": ["mean", "median", "variance", "stdev", "min", "max", "sum", "count"],
+                            "description": "Statistical function to compute"
+                        },
+                        "values": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "minItems": 1,
+                            "description": "Decimal numbers as strings"
+                        },
+                        "precision": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "description": "Significant digits (default: 28)"
+                        },
+                        "sample": {
+                            "type": "boolean",
+                            "description": "Use sample variance/stdev (N-1) instead of population (default: false)"
+                        }
+                    },
+                    "required": ["function", "values"]
+                }
+            },
+            {
+                "name": "exact_convert_units",
+                "description": "Convert values between compatible units (length: m/cm/mm/km/in/ft/yd/mi, mass: g/kg/mg/lb, time: s/min/h/day)",
+                "category": "math",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "value": {
+                            "type": "string",
+                            "description": "Decimal number as string"
+                        },
+                        "from_unit": {
+                            "type": "string",
+                            "enum": ["m", "cm", "mm", "km", "in", "ft", "yd", "mi", "g", "kg", "mg", "lb", "s", "min", "h", "day"],
+                            "description": "Source unit"
+                        },
+                        "to_unit": {
+                            "type": "string",
+                            "enum": ["m", "cm", "mm", "km", "in", "ft", "yd", "mi", "g", "kg", "mg", "lb", "s", "min", "h", "day"],
+                            "description": "Target unit"
+                        },
+                        "precision": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "description": "Significant digits (default: 28)"
+                        }
+                    },
+                    "required": ["value", "from_unit", "to_unit"]
+                }
+            },
+            {
+                "name": "exact_unit_arithmetic",
+                "description": "Perform arithmetic on values with units, handling dimension checking (e.g., 2m + 3ft = 2.9144m)",
+                "category": "math",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "operator": {
+                            "type": "string",
+                            "enum": ["add", "sub", "mul", "div"],
+                            "description": "Arithmetic operation"
+                        },
+                        "left": {
+                            "type": "object",
+                            "properties": {
+                                "value": {"type": "string"},
+                                "unit": {"type": "string"}
+                            },
+                            "required": ["value", "unit"]
+                        },
+                        "right": {
+                            "type": "object",
+                            "properties": {
+                                "value": {"type": "string"},
+                                "unit": {"type": "string"}
+                            },
+                            "required": ["value", "unit"]
+                        },
+                        "result_unit": {
+                            "type": "string",
+                            "description": "Optional desired output unit"
+                        },
+                        "precision": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100
+                        }
+                    },
+                    "required": ["operator", "left", "right"]
+                }
+            }
+        ]
+    }
+
+
 @app.post("/v1/compute", response_model=ComputeResponse)
 async def compute(request: ComputeRequest) -> ComputeResponse:
     """Execute a compute request with a strict timeout.
@@ -696,7 +837,7 @@ async def compute(request: ComputeRequest) -> ComputeResponse:
 
 @app.post("/mcp", response_model=MCPResponse)
 async def mcp_tool_call(request: MCPRequest) -> MCPResponse:
-    """Handle MCP tool invocations for exact_compute.
+    """Handle MCP tool invocations for multiple exact computation tools.
 
     Args:
         request: MCP JSON-RPC request envelope.
@@ -711,15 +852,53 @@ async def mcp_tool_call(request: MCPRequest) -> MCPResponse:
             message="Method not found",
         )
 
-    if request.params.name != TOOL_NAME:
+    # Route by tool name
+    tool_name = request.params.name
+    
+    # Map tool names to internal operations
+    tool_routing = {
+        "exact_calculate": ("arithmetic", ArithmeticParams),
+        "exact_statistics": ("statistics", StatisticsParams),
+        "exact_convert_units": ("unit", UnitConvertParams),
+        "exact_unit_arithmetic": ("unit", UnitArithmeticParams),
+    }
+    
+    if tool_name not in tool_routing:
+        # Fallback for backward compatibility or error
+        if tool_name == TOOL_NAME:
+            # Handle legacy tool name if needed, but for now strict matching
+            pass
+            
         return MCPResponse.error_response(
             request_id=request.id,
             code=MCPErrorCodes.TOOL_NOT_FOUND,
-            message="Tool not found",
+            message=f"Tool not found: {tool_name}",
         )
-
+    
+    operation_type, param_class = tool_routing[tool_name]
+    
     try:
-        compute_request = COMPUTE_REQUEST_ADAPTER.validate_python(request.params.arguments)
+        # Validate parameters based on tool type
+        if tool_name == "exact_calculate":
+            params = ArithmeticParams(**request.params.arguments)
+            compute_request = ArithmeticRequest(operation="arithmetic", params=params)
+        elif tool_name == "exact_statistics":
+            params = StatisticsParams(**request.params.arguments)
+            compute_request = StatisticsRequest(operation="statistics", params=params)
+        elif tool_name == "exact_convert_units":
+            # Map from_unit/to_unit to unit/to_unit for compatibility
+            args = request.params.arguments.copy()
+            if "from_unit" in args:
+                args["unit"] = args.pop("from_unit")
+            args["action"] = "convert"
+            params = UnitConvertParams(**args)
+            compute_request = UnitRequest(operation="unit", params=params)
+        elif tool_name == "exact_unit_arithmetic":
+            args = request.params.arguments.copy()
+            args["action"] = "arithmetic"
+            params = UnitArithmeticParams(**args)
+            compute_request = UnitRequest(operation="unit", params=params)
+            
     except ValidationError as exc:
         return MCPResponse.error_response(
             request_id=request.id,

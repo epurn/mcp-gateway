@@ -60,6 +60,7 @@ class MCPResponse(BaseModel):
     result: Any | None = Field(default=None, description="Result on success")
     error: MCPErrorDetail | None = Field(default=None, description="Error on failure")
     id: str | int = Field(..., description="Request ID for correlation")
+    tool_id: int | None = Field(default=None, description="Internal tool ID")
     
     @classmethod
     def success(cls, id: str | int, result: Any) -> "MCPResponse":
@@ -130,3 +131,4 @@ class InvokeToolRequest(BaseModel):
     tool_name: str = Field(..., description="Tool to invoke")
     arguments: dict[str, Any] = Field(default_factory=dict, description="Tool arguments")
     request_id: str | None = Field(default=None, description="Optional request ID")
+    tool_id: int | None = Field(default=None, description="Internal tool ID")

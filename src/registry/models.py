@@ -9,10 +9,19 @@ from sqlalchemy import (
     Text,
     Boolean,
     DateTime,
+    Integer,
+    JSON,
     Enum as SQLAlchemyEnum,
     func,
 )
 from sqlalchemy.dialects.postgresql import ARRAY
+
+try:
+    from pgvector.sqlalchemy import Vector
+    PGVECTOR_AVAILABLE = True
+except ImportError:
+    PGVECTOR_AVAILABLE = False
+    Vector = None
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.database import Base
@@ -45,6 +54,11 @@ class Tool(Base):
         is_active: Whether the tool is available for use.
         created_at: Timestamp when the tool was registered.
         updated_at: Timestamp of last update.
+        categories: Tool categories for filtering (e.g., ["math", "conversion"]).
+        embedding: Vector representation of tool description for RAG.
+        usage_count: Number of times the tool has been invoked.
+        last_used_at: Timestamp of last tool invocation.
+        input_schema: JSON Schema definition for tool inputs.
     """
     
     __tablename__ = "tools"
@@ -95,6 +109,35 @@ class Tool(Base):
         onupdate=func.now(),
         nullable=True,
         comment="Last update timestamp"
+    )
+    
+    # Smart routing fields
+    categories: Mapped[list[str]] = mapped_column(
+        ARRAY(String(50)),
+        nullable=False,
+        server_default='{}',
+        comment="Tool categories for filtering"
+    )
+    embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(384) if PGVECTOR_AVAILABLE else JSON,
+        nullable=True,
+        comment="Tool description embedding for RAG"
+    )
+    usage_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default='0',
+        comment="Number of times tool has been invoked"
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Last time tool was invoked"
+    )
+    input_schema: Mapped[dict | None] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="JSON Schema for tool inputs"
     )
     
     def __repr__(self) -> str:

@@ -1,9 +1,11 @@
 """Repository layer for tool registry data access."""
 
-from sqlalchemy import select
+from sqlalchemy import select, update, func, cast
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.types import Text
 
-from .models import Tool
+from .models import Tool, PGVECTOR_AVAILABLE
 
 
 async def get_all_active_tools(db: AsyncSession) -> list[Tool]:
@@ -72,3 +74,74 @@ async def create_tool(
     await db.commit()
     await db.refresh(tool)
     return tool
+
+
+async def get_tools_by_categories(
+    db: AsyncSession,
+    categories: list[str],
+    user_id: str | None = None
+) -> list[Tool]:
+    """Get tools matching any of the specified categories."""
+    query = select(Tool).where(Tool.is_active == True)
+    
+    # Filter by categories (matches ANY category in the list)
+    if categories:
+        query = query.where(
+            Tool.categories.overlap(cast(categories, ARRAY(Text)))
+        )
+    
+    # Apply user permissions if needed
+    # ... (extend with your auth logic)
+    
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
+async def get_core_tools(db: AsyncSession) -> list[Tool]:
+    """Get core tools that should always be available."""
+    query = select(Tool).where(
+        Tool.is_active == True,
+        Tool.categories.overlap(cast(['core'], ARRAY(Text)))
+    )
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
+async def search_tools_by_embedding(
+    db: AsyncSession,
+    query_embedding: list[float],
+    top_k: int = 10,
+    threshold: float = 0.7
+) -> list[Tool]:
+    """Search tools using vector similarity (RAG-MCP)."""
+    if not PGVECTOR_AVAILABLE:
+        raise RuntimeError("pgvector not available")
+    
+    # Cosine similarity search with threshold
+    # pgvector distance = 1 - cosine_similarity
+    query = select(Tool).where(
+        Tool.is_active == True,
+        Tool.embedding.isnot(None),
+        Tool.embedding.cosine_distance(query_embedding) < (1.0 - threshold)
+    ).order_by(
+        Tool.embedding.cosine_distance(query_embedding)
+    ).limit(top_k)
+    
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
+async def increment_tool_usage(
+    db: AsyncSession,
+    tool_id: int
+) -> None:
+    """Increment usage counter for a tool."""
+    await db.execute(
+        update(Tool)
+        .where(Tool.id == tool_id)
+        .values(
+            usage_count=Tool.usage_count + 1,
+            last_used_at=func.now()
+        )
+    )
+    await db.commit()

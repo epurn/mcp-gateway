@@ -40,10 +40,10 @@ graph LR
 ```
 
 ## 🧰 v1 Tool Set
-Exactly three tools are supported in v1:
-- **exact_compute**: Deterministic high-precision arithmetic, statistics, unit-safe calculations.
-- **git_readonly**: Read-only Git history, diff, blame, search.
-- **document_generate**: Deterministic PDF/DOCX generation (Pandoc-backed).
+Exactly three tool categories are supported in v1:
+- **Calculator**: Deterministic math, statistics, unit conversion.
+- **Git**: Read-only repository history and search.
+- **Document Generator**: Deterministic PDF/DOCX generation (Next).
 
 Each tool is a separate containerized service and exposes:
 - `GET /health`
@@ -90,11 +90,32 @@ python -c "from src.auth.utils import create_test_jwt; print(create_test_jwt(use
 
 Then call the gateway:
 ```bash
-curl -X POST http://localhost:8000/mcp/invoke \
-  -H "Authorization: Bearer <TOKEN>" \
   -H "Content-Type: application/json" \
   -d '{"tool_name":"exact_compute","arguments":{"operation":"arithmetic","params":{"operator":"add","operands":["1.2","2.3"],"precision":28}}}'
 ```
+
+### 5) Connect via Antigravity (or other MCP Clients)
+Since Antigravity requires stdio-based communication, use `mcp-bridge` to connect to the Gateway's SSE endpoint.
+
+**Config:**
+```json
+{
+  "mcpServers": {
+    "gateway": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@nimbletools/mcp-http-bridge",
+        "--endpoint",
+        "http://localhost:8000/sse",
+        "--token",
+        "YOUR_JWT_TOKEN_HERE"
+      ]
+    }
+  }
+}
+```
+*Note: Ensure your JWT token is valid and the `src` volume is mounted in Docker for development.*
 
 ## 🧪 Development Deployment (Local Python)
 
