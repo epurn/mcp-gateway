@@ -15,7 +15,7 @@ from src.database import get_db
 from src.dependencies import get_http_client
 
 from .schemas import MCPJSONRPCRequest, MCPJSONRPCResponse, MCPInitializeParams, MCPToolCallParams
-from .service import handle_initialize, handle_tools_list, handle_tools_call
+from .service import handle_initialize, handle_tools_list, handle_tools_call, handle_find_tools
 
 
 router = APIRouter(prefix="", tags=["mcp-sse"])
@@ -119,6 +119,50 @@ async def sse_endpoint(
             
             elif method == "tools/call":
                 call_params = MCPToolCallParams(**params)
+                
+                # Special handling for find_tools meta-tool
+                if call_params.name == "find_tools":
+                    import json # Added missing import for json.dumps
+                    result_data = await handle_find_tools(
+                        db=db, # Corrected typo from 'b' to 'db'
+                        query=call_params.arguments.get("query", ""),
+                        max_results=call_params.arguments.get("max_results", 5)
+                    )
+                    # Return as MCP tool call result
+                    return MCPJSONRPCResponse(
+                        id=jsonrpc_request.id,
+                        result={
+                            "content": [{"type": "text", "text": json.dumps(result_data, indent=2)}],
+                            "isError": False
+                        }
+                    )
+                
+                # Special handling for call_tool meta-tool (invoke discovered tools)
+                if call_params.name == "call_tool":
+                    import json
+                    tool_name = call_params.arguments.get("name", "")
+                    tool_args = call_params.arguments.get("arguments", {})
+                    
+                    if not tool_name:
+                        return MCPJSONRPCResponse(
+                            id=jsonrpc_request.id,
+                            result={
+                                "content": [{"type": "text", "text": "Error: 'name' is required"}],
+                                "isError": True
+                            }
+                        )
+                    
+                    # Proxy the call to the actual tool
+                    result = await handle_tools_call(
+                        db=db,
+                        user=user,
+                        client=client,
+                        name=tool_name,
+                        arguments=tool_args
+                    )
+                    return MCPJSONRPCResponse(id=jsonrpc_request.id, result=result.model_dump())
+                
+                # Regular tool call
                 result = await handle_tools_call(
                     db=db,
                     user=user,

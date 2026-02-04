@@ -55,7 +55,7 @@ async def handle_tools_list_smart(
     db: AsyncSession,
     user: AuthenticatedUser,
     context: str | None = None,
-    strategy: Literal["all", "rule", "rag", "hybrid"] = "hybrid",
+    strategy: Literal["all", "rule", "rag", "hybrid", "minimal"] = "minimal",
     max_tools: int = 15
 ) -> MCPToolListResult:
     """Handle tools/list with smart routing.
@@ -70,6 +70,26 @@ async def handle_tools_list_smart(
     Returns:
         Filtered list of relevant tools
     """
+    # NEW: Minimal strategy - return only core tools from database
+    # (find_tools is stored as a core tool in the registry)
+    if strategy == "minimal":
+        core_tools = await get_core_tools(db)
+        
+        mcp_tools = []
+        for tool in core_tools:
+            mcp_tools.append(MCPTool(
+                name=tool.name,
+                description=tool.description,
+                inputSchema=tool.input_schema or {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": True
+                }
+            ))
+        
+        return MCPToolListResult(tools=mcp_tools)
+    
+    # LEGACY: Full smart routing for other strategies
     tools_to_return = []
     
     # Core strategy: Always get core tools first
@@ -160,6 +180,63 @@ async def handle_tools_list_smart(
     return MCPToolListResult(tools=mcp_tools)
 
 
+async def handle_find_tools(
+    db: AsyncSession,
+    query: str,
+    max_results: int = 5
+) -> dict:
+    """Handle find_tools meta-tool call.
+    
+    Searches for tools using semantic similarity and returns their full schemas
+    so the LLM can use them immediately.
+    
+    Args:
+        db: Database session
+        query: What the user wants to do (e.g., "generate PDF", "calculate average")
+        max_results: Maximum number of tools to return
+        
+    Returns:
+        Dictionary with discovered tools and their schemas
+    """
+    try:
+        # Use semantic search to find relevant tools
+        query_embedding = await generate_embedding(query)
+        tools = await search_tools_by_embedding(
+            db, 
+            query_embedding, 
+            top_k=max_results,
+            threshold=0.3
+        )
+        
+        # Return tool schemas that LLM can use immediately
+        discovered_tools = []
+        for tool in tools:
+            discovered_tools.append({
+                "name": tool.name,
+                "description": tool.description,
+                "inputSchema": tool.input_schema or {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": True
+                }
+            })
+        
+        return {
+            "query": query,
+            "found": len(discovered_tools),
+            "tools": discovered_tools,
+            "message": f"Found {len(discovered_tools)} tool(s) matching '{query}'. You can now use these tools directly."
+        }
+    except Exception as e:
+        return {
+            "query": query,
+            "found": 0,
+            "tools": [],
+            "error": str(e),
+            "message": "Tool search failed. Please try a different query."
+        }
+
+
 async def handle_tools_list(
     db: AsyncSession,
     user: AuthenticatedUser,
@@ -175,7 +252,7 @@ async def handle_tools_list(
     Returns:
         List of tools available to the user.
     """
-    strategy = os.getenv("TOOL_FILTER_STRATEGY", "hybrid")
+    strategy = os.getenv("TOOL_FILTER_STRATEGY", "minimal")
     return await handle_tools_list_smart(db, user, context, strategy=strategy)
 
 

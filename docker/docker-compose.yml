@@ -24,6 +24,7 @@
     depends_on:
       - db
       - calculator
+      - document_generator
     ports:
       - "8000:8000"
     volumes:
@@ -37,6 +38,13 @@
   calculator:
     build:
       context: ../tools/calculator
+    restart: unless-stopped
+    networks:
+      - mcp-internal
+
+  document_generator:
+    build:
+      context: ../tools/document_generator
     restart: unless-stopped
     networks:
       - mcp-internal

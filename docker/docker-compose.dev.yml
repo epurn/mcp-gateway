@@ -1,7 +1,0 @@
-﻿services:
-  db:
-    ports:
-      - "5432:5432"
-  calculator:
-    ports:
-      - "8091:8000"

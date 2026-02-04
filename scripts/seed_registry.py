@@ -26,8 +26,31 @@ CALCULATOR_TOOLS = [
         "name": "exact_calculate",
         "description": "Perform exact arithmetic operations (add, subtract, multiply, divide) with configurable precision on decimal numbers",
         "backend_url": "http://calculator:8000/mcp",
-        "categories": ["math", "core"],
+        "categories": ["math", "arithmetic"],
         "risk_level": "low",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "operator": {
+                    "type": "string",
+                    "enum": ["add", "sub", "mul", "div"],
+                    "description": "Arithmetic operation to perform"
+                },
+                "operands": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 1,
+                    "description": "Decimal numbers as strings"
+                },
+                "precision": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "description": "Significant digits (default: 28)"
+                }
+            },
+            "required": ["operator", "operands"]
+        }
     },
     {
         "name": "exact_statistics",
@@ -35,6 +58,29 @@ CALCULATOR_TOOLS = [
         "backend_url": "http://calculator:8000/mcp",
         "categories": ["math"],
         "risk_level": "low",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "values": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 1,
+                    "description": "Decimal numbers as strings"
+                },
+                "operations": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": ["mean", "median", "variance", "std", "min", "max", "sum", "count"]},
+                    "description": "Statistics to calculate"
+                },
+                "precision": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "description": "Significant digits (default: 28)"
+                }
+            },
+            "required": ["values"]
+        }
     },
     {
         "name": "exact_convert_units",
@@ -42,6 +88,16 @@ CALCULATOR_TOOLS = [
         "backend_url": "http://calculator:8000/mcp",
         "categories": ["math"],
         "risk_level": "low",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "value": {"type": "string", "description": "Decimal value to convert"},
+                "from_unit": {"type": "string", "description": "Source unit (e.g., 'm', 'kg', 's')"},
+                "to_unit": {"type": "string", "description": "Target unit (e.g., 'ft', 'lb', 'min')"},
+                "precision": {"type": "integer", "minimum": 1, "maximum": 100}
+            },
+            "required": ["value", "from_unit", "to_unit"]
+        }
     },
     {
         "name": "exact_unit_arithmetic",
@@ -49,23 +105,128 @@ CALCULATOR_TOOLS = [
         "backend_url": "http://calculator:8000/mcp",
         "categories": ["math"],
         "risk_level": "low",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "operands": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "value": {"type": "string"},
+                            "unit": {"type": "string"}
+                        },
+                        "required": ["value", "unit"]
+                    },
+                    "description": "Values with units"
+                },
+                "operator": {"type": "string", "enum": ["add", "sub"], "description": "Operation (add/sub only for compatible units)"},
+                "output_unit": {"type": "string", "description": "Desired output unit"},
+                "precision": {"type": "integer", "minimum": 1, "maximum": 100}
+            },
+            "required": ["operands", "operator"]
+        }
     },
 ]
 
 CORE_TOOLS = [
     {
+        "name": "find_tools",
+        "description": (
+            "Search for available tools by describing what you want to do. "
+            "Use this when you need a tool that isn't in your current list. "
+            "Examples: 'generate PDF document', 'calculate statistics', 'convert units'. "
+            "Returns tool schemas you can use immediately."
+        ),
+        "backend_url": "internal://find_tools",  # Handled internally, not proxied
+        "categories": ["core"],
+        "risk_level": "low",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Describe what you want to do"
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Maximum number of tools to return (default: 5)",
+                    "default": 5
+                }
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "call_tool",
+        "description": (
+            "Invoke a discovered tool by name with the specified arguments. "
+            "Use find_tools() first to discover available tools and their schemas, "
+            "then use this to call them. Example: call_tool(name='exact_calculate', "
+            "arguments={'operator': 'mul', 'operands': ['100', '0.5']})"
+        ),
+        "backend_url": "internal://call_tool",  # Handled internally
+        "categories": ["core"],
+        "risk_level": "low",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Name of the tool to invoke (from find_tools results)"
+                },
+                "arguments": {
+                    "type": "object",
+                    "description": "Arguments to pass to the tool (see inputSchema from find_tools)",
+                    "additionalProperties": True
+                }
+            },
+            "required": ["name", "arguments"]
+        }
+    },
+]
+
+# Non-core tools (discoverable via find_tools)
+OTHER_TOOLS = [
+    {
         "name": "git_readonly",
         "description": "Read-only Git operations including history, diff, blame, and search across repositories",
         "backend_url": "http://gateway:8000/tools/git",  # Placeholder
-        "categories": ["core"],
+        "categories": ["git", "vcs"],
         "risk_level": "low",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "operation": {
+                    "type": "string",
+                    "enum": ["log", "diff", "blame", "search"],
+                    "description": "Git operation to perform"
+                },
+                "path": {"type": "string", "description": "Repository path"},
+                "ref": {"type": "string", "description": "Git reference (branch, tag, commit)"}
+            },
+            "required": ["operation", "path"]
+        }
     },
     {
         "name": "document_generate",
         "description": "Generate professional documents in PDF or DOCX format with deterministic rendering",
-        "backend_url": "http://gateway:8000/tools/document",  # Placeholder
-        "categories": ["core"],
+        "backend_url": "http://document_generator:8000/mcp",
+        "categories": ["documents", "pdf"],
         "risk_level": "low",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "content": {"type": "string", "description": "Markdown content to convert"},
+                "format": {
+                    "type": "string",
+                    "enum": ["pdf", "docx", "html"],
+                    "description": "Output document format"
+                },
+                "title": {"type": "string", "description": "Optional document title"}
+            },
+            "required": ["content", "format"]
+        }
     },
 ]
 
@@ -73,7 +234,7 @@ CORE_TOOLS = [
 async def seed_tools():
     """Seed the tool registry with production tools."""
     async with AsyncSessionLocal() as db:
-        all_tools = CALCULATOR_TOOLS + CORE_TOOLS
+        all_tools = CALCULATOR_TOOLS + CORE_TOOLS + OTHER_TOOLS
         
         created_count = 0
         updated_count = 0
@@ -98,6 +259,7 @@ async def seed_tools():
                 existing.categories = tool_def["categories"]
                 existing.risk_level = RiskLevel(tool_def["risk_level"])
                 existing.embedding = embedding
+                existing.input_schema = tool_def.get("input_schema")  # Add input_schema
                 existing.is_active = True
                 updated_count += 1
                 print(f"  ✓ Updated {tool_def['name']}")
@@ -110,6 +272,7 @@ async def seed_tools():
                     categories=tool_def["categories"],
                     risk_level=RiskLevel(tool_def["risk_level"]),
                     embedding=embedding,
+                    input_schema=tool_def.get("input_schema"),  # Add input_schema
                     is_active=True,
                 )
                 db.add(tool)

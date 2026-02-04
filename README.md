@@ -41,13 +41,48 @@ graph LR
 
 ## 🧰 v1 Tool Set
 Exactly three tool categories are supported in v1:
-- **Calculator**: Deterministic math, statistics, unit conversion.
-- **Git**: Read-only repository history and search.
-- **Document Generator**: Deterministic PDF/DOCX generation (Next).
+- **Calculator**: Deterministic math, statistics, unit conversion (✅ Implemented).
+- **Git**: Read-only repository history and search (Planned).
+- **Document Generator**: Deterministic PDF/DOCX/HTML generation (✅ Implemented).
 
 Each tool is a separate containerized service and exposes:
 - `GET /health`
 - `POST /mcp` (JSON-RPC 2.0 tool call endpoint)
+
+## 🔍 Smart Routing (Meta-Tools)
+
+As your tool registry grows, exposing all tools via `tools/list` creates scalability issues. The Gateway implements a **meta-tool pattern** for dynamic discovery:
+
+### Core Tools (Always Available)
+| Tool | Description |
+|------|-------------|
+| `find_tools` | Search for tools by describing what you want to do |
+| `call_tool` | Invoke a discovered tool by name with arguments |
+
+### Usage Flow
+```
+1. LLM calls find_tools("generate PDF document")
+   → Returns: document_generate schema with inputSchema
+
+2. LLM calls call_tool(name="document_generate", arguments={...})
+   → Returns: Generated document result
+```
+
+### Example
+```python
+# Discover tools
+find_tools(query="convert units", max_results=3)
+# Returns schemas for: exact_convert_units, exact_unit_arithmetic
+
+# Invoke discovered tool  
+call_tool(
+    name="exact_calculate",
+    arguments={"operator": "mul", "operands": ["1100", "0.09290304"]}
+)
+# Returns: {"result": "102.193344"}
+```
+
+This pattern scales to 100s of tools while keeping the initial tool list minimal.
 
 ## 🗂️ Tool Registry (Static)
 Tool definitions live in `config/tools.yaml` and are synced into the registry at gateway startup. Access is filtered by `config/policy.yaml`.
@@ -73,6 +108,7 @@ This brings up:
 - `gateway` (exposed on port 8000)
 - `db` (internal network only)
 - `calculator` (internal network only)
+- `document_generator` (internal network only)
 
 Tools are not exposed to the host; the gateway is the only entrypoint.
 
@@ -133,7 +169,7 @@ If the gateway runs on the host, update `config/tools.yaml` to point at `http://
 
 ### 2) Start Infrastructure and Tools
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db calculator
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db calculator document_generator
 ```
 
 ### 3) Run Gateway
