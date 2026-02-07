@@ -1,74 +1,27 @@
-# MCP Gateway - Handoff Notes
+# Handoff Notes
 
-## Last Updated: February 4, 2026
+## Current Status
+- **Secure File Downloads**: Implemented and verified.
+  - Gateway serves files at `/files/{user_id}/{filename}`.
+  - Strict ownership enforced: User A cannot access User B's files.
+  - Files stored in `gateway_files` Docker volume.
+- **Document Generator Optimization**:
+  - Switched Dockerfile to use `pandoc/extra` (Alpine) base image.
+  - MASSIVE build speed improvement (5s vs 70s).
+- **Core Features**:
+  - MCP Transport (SSE/JSON-RPC) working.
+  - Authentication (JWT) working.
+  - Call Tool meta-tool working.
 
-## Session Summary
+## Deployment Notes
+- The `gateway_files` volume permissions are automatically handled by the `init-files` service in `docker-compose.yml`. No manual intervention required.
 
-Implemented the **meta-tool pattern** for dynamic tool discovery:
+## Next Steps
+1. **Sandbox Service**: Design and implement secure sandbox for running untrusted code (Calculator/Python tools).
+2. **Frontend**: Build a simple UI to test file generation and downloads.
+3. **Usage Tracking**: Enhance `audit` logs to track file download events.
 
-### What Was Built
-
-1. **`find_tools` meta-tool** - Semantic search across tool registry
-   - Uses sentence-transformers embeddings + pgvector for similarity search
-   - Returns full `inputSchema` for discovered tools
-   
-2. **`call_tool` meta-tool** - Generic invoker for discovered tools
-   - Proxies calls to any tool in the registry
-   - Works with schemas returned by `find_tools`
-
-3. **Updated Registry Seeding**
-   - Only `find_tools` and `call_tool` have `core` category
-   - All other tools discoverable via semantic search
-
-### Files Modified
-
-- `scripts/seed_registry.py` - Added meta-tools and input_schema definitions
-- `src/mcp_transport/sse.py` - Added handlers for find_tools and call_tool
-- `src/mcp_transport/service.py` - Simplified handle_tools_list_smart
-- `README.md` - Added Smart Routing documentation
-
-## Next Session Tasks
-
-### Priority 1: Document Generator Improvements
-
-**Problem:** Currently returns base64 content that LLM can't directly share with user.
-
-**Solution:** Update document_generator to:
-1. Save generated files to a persistent volume
-2. Return a download URL instead of base64
-3. Gateway serves files at `/files/{id}` endpoint
-
-**Example Response (Current):**
-```json
-{"content": "UEsDBBQAAggI...", "format": "docx"}
-```
-
-**Example Response (Improved):**
-```json
-{"download_url": "http://gateway:8000/files/abc123.docx", "format": "docx", "size_bytes": 12139}
-```
-
-### Priority 2: Additional Improvements
-
-- [ ] Add caching for embedding model (slow first load)
-- [ ] Add tool usage analytics endpoint
-- [ ] Consider multi-turn conversation awareness for find_tools
-
-## Environment State
-
-- Docker services running: gateway, db, calculator, document_generator
-- All 8 tools seeded with embeddings and input_schema
-- JWT token for testing: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`
-
-## Quick Test Commands
-
-```bash
-# Check tools/list returns only core tools
-python scripts/check_tools.py
-
-# Test find_tools + call_tool flow
-python scripts/test_call_tool.py
-
-# Re-seed registry after changes
-docker compose exec gateway python scripts/seed_registry.py
-```
+## Key Commands
+- **Rebuild Services**: `docker compose -f docker/docker-compose.yml up -d --build`
+- **Verify Downloads**: `python scripts/verify_downloads.py`
+- **Check Logs**: `docker logs -f docker-gateway-1`

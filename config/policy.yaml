@@ -21,6 +21,12 @@ roles:
       - "git_readonly"
       - "document_generate"
 
+  user:
+    # Standard users
+    allowed_tools:
+      - "exact_calculate"
+      - "document_generate"
+
 # Workspace-specific overrides (optional)
 workspaces:
   production:

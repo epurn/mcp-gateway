@@ -8,7 +8,8 @@ import tempfile
 from pathlib import Path
 from typing import Literal, Optional
 
-from fastapi import FastAPI
+import uuid
+from fastapi import FastAPI, Request
 from pydantic import BaseModel, Field, StrictStr, StrictInt, ConfigDict
 from starlette.responses import JSONResponse
 
@@ -147,7 +148,7 @@ async def list_mcp_tools() -> dict:
 
 
 @app.post("/mcp", response_model=MCPResponse)
-async def mcp_tool_call(request: MCPRequest) -> MCPResponse:
+async def mcp_tool_call(request: MCPRequest, fastapi_request: Request) -> MCPResponse:
     """Handle MCP tool invocations for document generation."""
     if request.method != "tools/call":
         return MCPResponse.error_response(
@@ -175,8 +176,14 @@ async def mcp_tool_call(request: MCPRequest) -> MCPResponse:
                 message="Content exceeds maximum size",
             )
 
+        # Get user ID from header (Gateway forwards this)
+        user_id = fastapi_request.headers.get("X-User-ID", "anonymous")
+        
+        # Get Gateway public URL
+        gateway_url = os.getenv("GATEWAY_PUBLIC_URL", "http://localhost:8000")
+
         # Generate document
-        result = await generate_document(params)
+        result = await generate_document(params, user_id, gateway_url)
         return MCPResponse.success(request_id=request.id, result=result)
 
     except Exception as e:
@@ -187,7 +194,7 @@ async def mcp_tool_call(request: MCPRequest) -> MCPResponse:
         )
 
 
-async def generate_document(params: GenerateParams) -> dict:
+async def generate_document(params: GenerateParams, user_id: str, gateway_url: str) -> dict:
     """Generate a document using Pandoc."""
     
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -202,7 +209,8 @@ async def generate_document(params: GenerateParams) -> dict:
         
         # Determine output file
         output_ext = params.format
-        output_file = tmp_path / f"output.{output_ext}"
+        filename = f"{uuid.uuid4()}.{output_ext}"
+        output_file = tmp_path / filename
         
         # Build pandoc command
         cmd = [
@@ -221,13 +229,11 @@ async def generate_document(params: GenerateParams) -> dict:
             cmd.extend([
                 "--pdf-engine=xelatex",
                 "-V", "geometry:margin=1in",
-                "-V", "mainfont:DejaVu Sans",
-                "-V", "monofont:DejaVu Sans Mono",
             ])
         
         # Run pandoc
         try:
-            result = subprocess.run(
+            subprocess.run(
                 cmd,
                 timeout=REQUEST_TIMEOUT_SEC,
                 capture_output=True,
@@ -238,16 +244,26 @@ async def generate_document(params: GenerateParams) -> dict:
         except subprocess.TimeoutExpired:
             raise ValueError("Document generation timeout")
         
-        # Read output file
-        output_data = output_file.read_bytes()
+        # Persist file to shared volume with user isolation
+        output_dir = Path("/app/output") / user_id
+        output_dir.mkdir(parents=True, exist_ok=True)
+        final_path = output_dir / filename
         
-        # Base64 encode
-        encoded = base64.b64encode(output_data).decode("ascii")
+        # Move file (shutil.move handles cross-device moves if necessary, checking simple rename first)
+        import shutil
+        shutil.move(str(output_file), str(final_path))
+        
+        # Get file size
+        size_bytes = final_path.stat().st_size
+        
+        # Construct download URL
+        download_url = f"{gateway_url}/files/{user_id}/{filename}"
         
         return {
             "format": params.format,
-            "size_bytes": len(output_data),
-            "content": encoded,
+            "filename": filename,
+            "size_bytes": size_bytes,
+            "download_url": download_url,
         }
 
 

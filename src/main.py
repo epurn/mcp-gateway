@@ -17,6 +17,7 @@ from src.jobs.router import router as jobs_router
 from src.jobs.router import router as jobs_router
 from src.audit.router import router as audit_router
 from src.mcp_transport.sse import router as mcp_sse_router
+from src.files.router import router as files_router
 
 
 from .audit.models import AuditLog  # noqa: F401 - Import so Base.metadata sees it
@@ -90,6 +91,7 @@ app.include_router(audit_router)
 app.include_router(audit_router)
 app.include_router(jobs_router)
 app.include_router(mcp_sse_router)
+app.include_router(files_router)
 
 
 

@@ -12,6 +12,14 @@
     networks:
       - mcp-internal
 
+  init-files:
+    image: alpine:latest
+    command: chown -R 1000:1000 /data
+    volumes:
+      - gateway_files:/data
+    networks:
+      - mcp-internal
+
   gateway:
     build:
       context: ..
@@ -21,16 +29,23 @@
       - ../.env
     environment:
       DATABASE_URL: postgresql+asyncpg://mcp_user:mcp_password@db:5432/mcp_gateway
+      GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:8000}
     depends_on:
-      - db
-      - calculator
-      - document_generator
+      init-files:
+        condition: service_completed_successfully
+      db:
+        condition: service_started
+      calculator:
+        condition: service_started
+      document_generator:
+        condition: service_started
     ports:
       - "8000:8000"
     volumes:
       - ../config:/app/config:ro
       - ../src:/app/src
       - ../scripts:/app/scripts
+      - gateway_files:/app/static/files
     networks:
       - mcp-public
       - mcp-internal
@@ -46,11 +61,20 @@
     build:
       context: ../tools/document_generator
     restart: unless-stopped
+    depends_on:
+      init-files:
+        condition: service_completed_successfully
+    entrypoint: []
+    environment:
+      GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:8000}
+    volumes:
+      - gateway_files:/app/output
     networks:
       - mcp-internal
 
 volumes:
   postgres_data:
+  gateway_files:
 
 
 networks:

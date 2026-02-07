@@ -13,7 +13,7 @@
     is_active: true
   - name: "document_generate"
     description: "Deterministic document generation for PDF/DOCX artifacts."
-    backend_url: "http://docgen:8000/mcp"
+    backend_url: "http://document_generator:8000/mcp"
     risk_level: "low"
     required_roles: []
     is_active: true
