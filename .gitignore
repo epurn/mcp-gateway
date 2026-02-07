@@ -30,6 +30,12 @@ coverage.xml
 *.cover
 coverage.txt
 .pytest_cache/
+.pytest_cache_local_user/
+.pytest_tmp/
+
+# Model Cache
+model_cache/*
+!model_cache/.gitkeep
 
 # Agent/Brain
 .agent/

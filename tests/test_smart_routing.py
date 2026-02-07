@@ -1,5 +1,7 @@
 """Test suite for Smart Routing features (filtering, embeddings, RAG search)."""
 
+import os
+from pathlib import Path
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
@@ -16,6 +18,46 @@ from src.registry.repository import (
     increment_tool_usage
 )
 from src.registry.models import Tool, RiskLevel
+
+
+def _embedding_model_cached() -> bool:
+    model_name = "all-MiniLM-L6-v2"
+
+    repo_cache = Path(__file__).resolve().parents[1] / "model_cache"
+    if _has_model(repo_cache, model_name):
+        return True
+
+    st_home = os.getenv("SENTENCE_TRANSFORMERS_HOME")
+    if st_home and _has_model(Path(st_home), model_name, check_sentence_transformers=True):
+        return True
+
+    hf_roots = [
+        os.getenv("HF_HUB_CACHE"),
+        os.getenv("TRANSFORMERS_CACHE"),
+        os.getenv("HF_HOME"),
+    ]
+    for root in hf_roots:
+        if not root:
+            continue
+        if _has_model(Path(root), model_name):
+            return True
+
+    default_hub = Path.home() / ".cache" / "huggingface" / "hub"
+    return (default_hub / f"models--sentence-transformers--{model_name}").exists()
+
+
+def _has_model(base_dir: Path, model_name: str, check_sentence_transformers: bool = False) -> bool:
+    if not base_dir.exists():
+        return False
+
+    if check_sentence_transformers:
+        for path in base_dir.rglob(f"*{model_name}*"):
+            if path.is_dir():
+                return True
+
+    hub_path = base_dir if base_dir.name == "hub" else base_dir / "hub"
+    model_dir = hub_path / f"models--sentence-transformers--{model_name}"
+    return model_dir.exists()
 
 
 class TestCategoryExtraction:
@@ -85,6 +127,8 @@ class TestEmbeddingGeneration:
     @pytest.mark.asyncio
     async def test_generate_embedding_shape(self):
         """Test that embeddings have correct dimensionality."""
+        if not _embedding_model_cached():
+            pytest.skip("Embedding model not cached locally (offline-safe skip).")
         try:
             embedding = await generate_embedding("Calculate the sum of two numbers")
             assert isinstance(embedding, list)
@@ -98,6 +142,8 @@ class TestEmbeddingGeneration:
     @pytest.mark.asyncio
     async def test_batch_embeddings(self):
         """Test batch embedding generation."""
+        if not _embedding_model_cached():
+            pytest.skip("Embedding model not cached locally (offline-safe skip).")
         try:
             texts = [
                 "Calculate the sum",
@@ -115,6 +161,8 @@ class TestEmbeddingGeneration:
     @pytest.mark.asyncio
     async def test_similar_texts_have_similar_embeddings(self):
         """Test that semantically similar texts produce similar embeddings."""
+        if not _embedding_model_cached():
+            pytest.skip("Embedding model not cached locally (offline-safe skip).")
         try:
             emb1 = await generate_embedding("Calculate the sum of two numbers")
             emb2 = await generate_embedding("Add two numbers together")

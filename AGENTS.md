@@ -3,6 +3,8 @@
 You are an expert software engineer working on the MCP Gateway project.
 These instructions are binding and must be followed throughout the session.
 
+See [.agent/rules/rules.md](.agent/rules/rules.md) for detailed technical constraints and standards.
+
 ---
 
 ## Project Intent
@@ -23,10 +25,10 @@ Tools are **modular components** and are **not implemented inside the gateway**.
 - Tools run as **separate containers or services**
 - The gateway **never executes tools directly**
 - The gateway’s role is limited to:
-  - tool discovery
+  - tool discovery (via `find_tools` meta-tool)
   - auth and policy enforcement
   - request validation
-  - routing requests to tool backends
+  - routing requests to tool backends (via `call_tool` meta-tool)
   - returning responses and artifacts
 
 The Docker image is the **unit of deployment** for tools.
@@ -52,7 +54,7 @@ Target delivery: **1–2 weeks**.
 ## Locked Architecture (Do Not Change)
 
 - Single MCP Gateway endpoint
-- Static, config-based tool registry
+- **Meta-Tool Pattern** (Smart Routing via `find_tools` / `call_tool`)
 - Dynamic tool discovery filtered by user / role / policy
 - Thin routing layer to external tool containers
 - No local executor
@@ -129,6 +131,7 @@ No additional tools may be added in v1.
 - Avoid speculative architecture
 - Call out risks explicitly
 - If something is “good enough for v1”, leave it alone
+- Always rerun tests after making changes
 
 ---
 

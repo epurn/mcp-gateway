@@ -19,6 +19,14 @@
       - gateway_files:/data
     networks:
       - mcp-internal
+  
+  init-model-cache:
+    image: alpine:latest
+    command: chown -R 1000:1000 /model_cache
+    volumes:
+      - model_cache:/model_cache
+    networks:
+      - mcp-internal
 
   gateway:
     build:
@@ -30,8 +38,13 @@
     environment:
       DATABASE_URL: postgresql+asyncpg://mcp_user:mcp_password@db:5432/mcp_gateway
       GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:8000}
+      SENTENCE_TRANSFORMERS_HOME: /app/model_cache/sentence_transformers
+      HF_HOME: /app/model_cache/huggingface
+      HF_HUB_CACHE: /app/model_cache/huggingface/hub
     depends_on:
       init-files:
+        condition: service_completed_successfully
+      init-model-cache:
         condition: service_completed_successfully
       db:
         condition: service_started
@@ -46,6 +59,7 @@
       - ../src:/app/src
       - ../scripts:/app/scripts
       - gateway_files:/app/static/files
+      - model_cache:/app/model_cache
     networks:
       - mcp-public
       - mcp-internal
@@ -75,6 +89,7 @@
 volumes:
   postgres_data:
   gateway_files:
+  model_cache:
 
 
 networks:

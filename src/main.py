@@ -14,7 +14,6 @@ from .registry.service import sync_tools_from_config, clear_tool_cache
 from .registry.models import Tool  # noqa: F401 - Import so Base.metadata sees it
 from src.gateway.router import router as gateway_router
 from src.jobs.router import router as jobs_router
-from src.jobs.router import router as jobs_router
 from src.audit.router import router as audit_router
 from src.mcp_transport.sse import router as mcp_sse_router
 from src.files.router import router as files_router
@@ -87,7 +86,6 @@ async def health_check():
 # Include routers
 app.include_router(registry_router)
 app.include_router(gateway_router)
-app.include_router(audit_router)
 app.include_router(audit_router)
 app.include_router(jobs_router)
 app.include_router(mcp_sse_router)

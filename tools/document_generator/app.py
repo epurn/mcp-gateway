@@ -16,6 +16,7 @@ from starlette.responses import JSONResponse
 # Configuration
 MAX_CONTENT_SIZE = int(os.getenv("MAX_CONTENT_SIZE", "524288"))  # 512KB
 REQUEST_TIMEOUT_SEC = int(os.getenv("REQUEST_TIMEOUT_SEC", "30"))
+USER_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$")
 
 # Emoji pattern for stripping (covers most emoji ranges)
 EMOJI_PATTERN = re.compile(
@@ -40,6 +41,11 @@ EMOJI_PATTERN = re.compile(
 def strip_emojis(text: str) -> str:
     """Remove emojis from text for LaTeX compatibility."""
     return EMOJI_PATTERN.sub("", text)
+
+
+def validate_user_id(user_id: str) -> None:
+    if not USER_ID_PATTERN.fullmatch(user_id):
+        raise ValueError("Invalid user id")
 
 
 app = FastAPI(title="Document Generator", version="1.0")
@@ -177,7 +183,21 @@ async def mcp_tool_call(request: MCPRequest, fastapi_request: Request) -> MCPRes
             )
 
         # Get user ID from header (Gateway forwards this)
-        user_id = fastapi_request.headers.get("X-User-ID", "anonymous")
+        user_id = fastapi_request.headers.get("X-User-ID")
+        if not user_id:
+            return MCPResponse.error_response(
+                request_id=request.id,
+                code=MCPErrorCodes.INVALID_PARAMS,
+                message="Missing X-User-ID header",
+            )
+        try:
+            validate_user_id(user_id)
+        except ValueError as e:
+            return MCPResponse.error_response(
+                request_id=request.id,
+                code=MCPErrorCodes.INVALID_PARAMS,
+                message=str(e),
+            )
         
         # Get Gateway public URL
         gateway_url = os.getenv("GATEWAY_PUBLIC_URL", "http://localhost:8000")
@@ -245,7 +265,10 @@ async def generate_document(params: GenerateParams, user_id: str, gateway_url: s
             raise ValueError("Document generation timeout")
         
         # Persist file to shared volume with user isolation
-        output_dir = Path("/app/output") / user_id
+        output_base = Path("/app/output").resolve()
+        output_dir = (output_base / user_id).resolve()
+        if not output_dir.is_relative_to(output_base):
+            raise ValueError("Invalid output path")
         output_dir.mkdir(parents=True, exist_ok=True)
         final_path = output_dir / filename
         
