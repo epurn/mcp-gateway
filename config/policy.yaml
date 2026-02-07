@@ -18,13 +18,18 @@ roles:
     # Viewers can use read-only demo tools
     allowed_tools:
       - "exact_calculate"
-      - "git_readonly"
+      - "exact_statistics"
+      - "exact_convert_units"
+      - "exact_unit_arithmetic"
       - "document_generate"
 
   user:
     # Standard users
     allowed_tools:
       - "exact_calculate"
+      - "exact_statistics"
+      - "exact_convert_units"
+      - "exact_unit_arithmetic"
       - "document_generate"
 
 # Workspace-specific overrides (optional)
@@ -41,7 +46,11 @@ workspaces:
 tools:
   exact_calculate:
     risk_tier: low
-  git_readonly:
+  exact_statistics:
+    risk_tier: low
+  exact_convert_units:
+    risk_tier: low
+  exact_unit_arithmetic:
     risk_tier: low
   document_generate:
     risk_tier: low

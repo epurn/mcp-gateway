@@ -12,6 +12,13 @@
   - MCP Transport (SSE/JSON-RPC) working.
   - Authentication (JWT) working.
   - Call Tool meta-tool working.
+- **Registry Sync**:
+  - `sync_tools_from_config` now deactivates tools missing from `config/tools.yaml` (history preserved) and clears cache after sync.
+  - Tool registry and policy updated to remove `git_readonly` and list the four calculator tools.
+- **Local Test/Cache Hygiene**:
+  - Pytest cache provider disabled to avoid permission issues (`-p no:cacheprovider`), temp dir pinned to `.pytest_tmp`.
+  - Coverage scripts use `python -m coverage` with a repo-local coverage file.
+  - Model cache lives in `model_cache/` and is wired via env vars in tests and docker compose.
 
 ## Deployment Notes
 - The `gateway_files` volume permissions are automatically handled by the `init-files` service in `docker-compose.yml`. No manual intervention required.
@@ -25,3 +32,5 @@
 - **Rebuild Services**: `docker compose -f docker/docker-compose.yml up -d --build`
 - **Verify Downloads**: `python scripts/verify_downloads.py`
 - **Check Logs**: `docker logs -f docker-gateway-1`
+- **Coverage (Windows)**: `. .\.venv\Scripts\Activate.ps1; .\scripts\run_tests_cov.ps1`
+- **Coverage (Unix)**: `./scripts/run_tests_cov.sh`

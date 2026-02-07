@@ -6,6 +6,7 @@ __pycache__/
 *.so
 .env
 .env.local
+.env.development
 
 # Logs
 *.log

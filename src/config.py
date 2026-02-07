@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     # MCP
     MCP_LOG_LEVEL: str = "INFO"
 
-    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True, extra="ignore")
 
 @lru_cache()
 def get_settings() -> Settings:

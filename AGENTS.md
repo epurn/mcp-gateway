@@ -119,6 +119,7 @@ No additional tools may be added in v1.
 - Enforce timeouts and output size limits on every routed tool call
 - Emit structured audit logs for **every** tool invocation
   - Include user, tool name, decision, and metadata
+- Syncing tool registry from `config/tools.yaml` must deactivate tools not present (do not delete history)
 - Tools must be stateless in v1
 - Avoid adding background workers or async queues unless strictly required
 

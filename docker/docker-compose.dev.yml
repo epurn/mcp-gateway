@@ -1,0 +1,12 @@
+services:
+  db:
+    env_file:
+      - ../.env.development
+
+  gateway:
+    env_file:
+      - ../.env.development
+
+  document_generator:
+    env_file:
+      - ../.env.development

@@ -10,7 +10,7 @@ from src.auth.models import AuthenticatedUser
 from src.auth.policy import check_tool_permission
 
 from .models import RiskLevel, Tool
-from .repository import get_all_active_tools, get_tool_by_name, create_tool
+from .repository import get_all_active_tools, get_tool_by_name, create_tool, deactivate_tools_not_in_list
 from .config import load_tool_registry
 from .schemas import ToolResponse, ToolListResponse
 
@@ -36,6 +36,7 @@ async def sync_tools_from_config(db: "AsyncSession", config_path: str | None = N
     """
     registry_config = load_tool_registry(config_path)
     if not registry_config.tools:
+        clear_tool_cache()
         return
 
     seen_names: set[str] = set()
@@ -77,6 +78,9 @@ async def sync_tools_from_config(db: "AsyncSession", config_path: str | None = N
         if updated:
             await db.commit()
             await db.refresh(existing)
+
+    await deactivate_tools_not_in_list(db, seen_names)
+    clear_tool_cache()
 
 
 async def get_all_tools_cached(db: "AsyncSession") -> list[Tool]:

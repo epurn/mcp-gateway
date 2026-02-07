@@ -1,28 +1,42 @@
 ﻿services:
   db:
     image: ankane/pgvector:v0.5.1 # PostgreSQL 16 with pgvector extension
-    restart: always
-    environment:
-      POSTGRES_USER: mcp_user
-      POSTGRES_PASSWORD: mcp_password
-      POSTGRES_DB: mcp_gateway
+    restart: unless-stopped
+    env_file:
+      - ../.env
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-db:/docker-entrypoint-initdb.d # Auto-run initialization scripts
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
+        reservations:
+          cpus: "0.25"
+          memory: 256m
     networks:
       - mcp-internal
 
   init-files:
-    image: alpine:latest
+    image: alpine:3.20
     command: chown -R 1000:1000 /data
+    restart: "no"
     volumes:
       - gateway_files:/data
     networks:
       - mcp-internal
   
   init-model-cache:
-    image: alpine:latest
+    image: alpine:3.20
     command: chown -R 1000:1000 /model_cache
+    restart: "no"
     volumes:
       - model_cache:/model_cache
     networks:
@@ -35,31 +49,43 @@
     restart: unless-stopped
     env_file:
       - ../.env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://mcp_user:mcp_password@db:5432/mcp_gateway
-      GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:8000}
-      SENTENCE_TRANSFORMERS_HOME: /app/model_cache/sentence_transformers
-      HF_HOME: /app/model_cache/huggingface
-      HF_HUB_CACHE: /app/model_cache/huggingface/hub
     depends_on:
       init-files:
         condition: service_completed_successfully
       init-model-cache:
         condition: service_completed_successfully
       db:
-        condition: service_started
+        condition: service_healthy
       calculator:
-        condition: service_started
+        condition: service_healthy
       document_generator:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3).read()",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     ports:
       - "8000:8000"
     volumes:
       - ../config:/app/config:ro
-      - ../src:/app/src
-      - ../scripts:/app/scripts
       - gateway_files:/app/static/files
       - model_cache:/app/model_cache
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
+        reservations:
+          cpus: "0.25"
+          memory: 256m
     networks:
       - mcp-public
       - mcp-internal
@@ -68,6 +94,26 @@
     build:
       context: ../tools/calculator
     restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3).read()",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512m
+        reservations:
+          cpus: "0.1"
+          memory: 128m
     networks:
       - mcp-internal
 
@@ -75,14 +121,34 @@
     build:
       context: ../tools/document_generator
     restart: unless-stopped
+    env_file:
+      - ../.env
     depends_on:
       init-files:
         condition: service_completed_successfully
     entrypoint: []
-    environment:
-      GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:8000}
     volumes:
       - gateway_files:/app/output
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3).read()",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 1g
+        reservations:
+          cpus: "0.1"
+          memory: 256m
     networks:
       - mcp-internal
 

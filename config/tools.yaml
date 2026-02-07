@@ -1,13 +1,25 @@
 ﻿tools:
-  - name: "exact_compute"
-    description: "Deterministic high-precision arithmetic, statistics, and unit-safe calculations."
+  - name: "exact_calculate"
+    description: "Deterministic high-precision arithmetic calculations."
     backend_url: "http://calculator:8000/mcp"
     risk_level: "low"
     required_roles: []
     is_active: true
-  - name: "git_readonly"
-    description: "Read-only Git history, diff, blame, and search operations."
-    backend_url: "http://git-readonly:8000/mcp"
+  - name: "exact_statistics"
+    description: "Deterministic statistics (mean, median, variance, deviation)."
+    backend_url: "http://calculator:8000/mcp"
+    risk_level: "low"
+    required_roles: []
+    is_active: true
+  - name: "exact_convert_units"
+    description: "Deterministic unit conversion."
+    backend_url: "http://calculator:8000/mcp"
+    risk_level: "low"
+    required_roles: []
+    is_active: true
+  - name: "exact_unit_arithmetic"
+    description: "Deterministic arithmetic with units."
+    backend_url: "http://calculator:8000/mcp"
     risk_level: "low"
     required_roles: []
     is_active: true

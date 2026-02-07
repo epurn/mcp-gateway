@@ -145,3 +145,28 @@ async def increment_tool_usage(
         )
     )
     await db.commit()
+
+
+async def deactivate_tools_not_in_list(
+    db: AsyncSession,
+    active_names: set[str]
+) -> int:
+    """Deactivate tools that are not present in the provided name set.
+
+    Args:
+        db: Async database session.
+        active_names: Tool names that should remain active.
+
+    Returns:
+        Number of rows updated.
+    """
+    if not active_names:
+        return 0
+
+    result = await db.execute(
+        update(Tool)
+        .where(Tool.name.notin_(active_names))
+        .values(is_active=False)
+    )
+    await db.commit()
+    return result.rowcount or 0

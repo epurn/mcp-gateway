@@ -5,7 +5,8 @@ from unittest.mock import MagicMock, AsyncMock, patch
 
 from src.registry.models import Tool, RiskLevel
 from src.registry.schemas import ToolResponse, ToolListResponse
-from src.registry.service import get_tools_for_user, clear_tool_cache, _tool_cache
+from src.registry.service import get_tools_for_user, clear_tool_cache, _tool_cache, sync_tools_from_config
+from src.registry.config import ToolRegistryConfig, ToolConfig
 from src.auth.models import AuthenticatedUser, UserClaims
 
 
@@ -204,3 +205,47 @@ class TestToolCache:
         clear_tool_cache()
         
         assert len(_tool_cache) == 0
+
+
+class TestToolSync:
+    """Tests for syncing tool registry from config."""
+
+    @pytest.mark.asyncio
+    async def test_sync_prunes_and_clears_cache(self):
+        _tool_cache["stale_key"] = "stale"
+
+        config = ToolRegistryConfig(
+            tools=[
+                ToolConfig(
+                    name="tool_a",
+                    description="Tool A",
+                    backend_url="http://a",
+                    risk_level="low",
+                )
+            ]
+        )
+
+        with patch("src.registry.service.load_tool_registry", return_value=config):
+            with patch("src.registry.service.get_tool_by_name", new_callable=AsyncMock) as mock_get:
+                mock_get.return_value = None
+                with patch("src.registry.service.create_tool", new_callable=AsyncMock) as mock_create:
+                    with patch("src.registry.service.deactivate_tools_not_in_list", new_callable=AsyncMock) as mock_prune:
+                        db = AsyncMock()
+                        await sync_tools_from_config(db)
+
+                        mock_create.assert_awaited_once()
+                        mock_prune.assert_awaited_once_with(db, {"tool_a"})
+                        assert len(_tool_cache) == 0
+
+    @pytest.mark.asyncio
+    async def test_sync_empty_config_clears_cache_only(self):
+        _tool_cache["stale_key"] = "stale"
+        config = ToolRegistryConfig(tools=[])
+
+        with patch("src.registry.service.load_tool_registry", return_value=config):
+            with patch("src.registry.service.deactivate_tools_not_in_list", new_callable=AsyncMock) as mock_prune:
+                db = AsyncMock()
+                await sync_tools_from_config(db)
+
+                mock_prune.assert_not_awaited()
+                assert len(_tool_cache) == 0

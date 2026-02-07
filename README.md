@@ -89,6 +89,8 @@ Tool definitions live in `config/tools.yaml` and are synced into the registry at
 
 By default, `config/tools.yaml` uses Docker Compose service names. If you run tools outside Docker, update `backend_url` values to reachable hostnames/ports.
 
+**Note:** Tools removed from `config/tools.yaml` are **marked inactive** on startup (history is preserved). Add them back to re‑enable.
+
 ## 🧪 Development Deployment (Docker Compose)
 
 ### Prerequisites
@@ -126,8 +128,11 @@ python -c "from src.auth.utils import create_test_jwt; print(create_test_jwt(use
 
 Then call the gateway:
 ```bash
+TOKEN="YOUR_JWT_TOKEN_HERE"
+curl -sS -X POST "http://localhost:8000/mcp/invoke" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"tool_name":"exact_compute","arguments":{"operation":"arithmetic","params":{"operator":"add","operands":["1.2","2.3"],"precision":28}}}'
+  -d '{"tool_name":"exact_calculate","arguments":{"operator":"add","operands":["1.2","2.3"],"precision":28}}'
 ```
 
 ### 5) Connect via Antigravity (or other MCP Clients)
@@ -152,6 +157,36 @@ Since Antigravity requires stdio-based communication, use `mcp-bridge` to connec
 }
 ```
 *Note: Ensure your JWT token is valid and the `src` volume is mounted in Docker for development.*
+
+### 6) Test with a Real LLM (MCP Client)
+Use any MCP-compatible client (e.g., Claude Desktop, Continue, or your own MCP client) that supports stdio-based MCP servers.
+
+1. Start the gateway and tools (Docker Compose).
+2. Generate a JWT (dev only):
+   ```bash
+   python -c "from src.auth.utils import create_test_jwt; print(create_test_jwt(user_id='demo', roles=['developer']))"
+   ```
+3. Configure your MCP client to run the HTTP bridge as the MCP server:
+   ```json
+   {
+     "mcpServers": {
+       "gateway": {
+         "command": "npx",
+         "args": [
+           "-y",
+           "@nimbletools/mcp-http-bridge",
+           "--endpoint",
+           "http://localhost:8000/sse",
+           "--token",
+           "YOUR_JWT_TOKEN_HERE"
+         ]
+       }
+     }
+   }
+   ```
+4. Prompt your LLM:
+   - “Find tools to generate a PDF report.”
+   - “Call document_generate with a short Markdown report.”
 
 ## 🧪 Development Deployment (Local Python)
 
