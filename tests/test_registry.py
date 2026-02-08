@@ -1,11 +1,18 @@
 """Unit tests for the tool registry module."""
 
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, patch
+from pydantic import ValidationError
 
-from src.registry.models import Tool, RiskLevel
+from src.registry.models import Tool, RiskLevel, ToolScope
 from src.registry.schemas import ToolResponse, ToolListResponse
-from src.registry.service import get_tools_for_user, clear_tool_cache, _tool_cache, sync_tools_from_config
+from src.registry.service import (
+    get_tools_for_user,
+    get_tools_by_scope_cached,
+    clear_tool_cache,
+    _tool_cache,
+    sync_tools_from_config,
+)
 from src.registry.config import ToolRegistryConfig, ToolConfig
 from src.auth.models import AuthenticatedUser, UserClaims
 
@@ -34,6 +41,7 @@ class TestToolModel:
             name="test_tool",
             description="A test tool",
             backend_url="http://localhost:8000",
+            scope=ToolScope.calculator,
             risk_level=RiskLevel.medium,
             is_active=True
         )
@@ -79,13 +87,13 @@ class TestToolFiltering:
         """Create mock tools for testing."""
         return [
             Tool(id=1, name="read_file", description="Read", backend_url="http://a", 
-                 risk_level=RiskLevel.low, is_active=True, required_roles=None),
+                 scope=ToolScope.calculator, risk_level=RiskLevel.low, is_active=True, required_roles=None),
             Tool(id=2, name="write_file", description="Write", backend_url="http://b", 
-                 risk_level=RiskLevel.medium, is_active=True, required_roles=None),
+                 scope=ToolScope.calculator, risk_level=RiskLevel.medium, is_active=True, required_roles=None),
             Tool(id=3, name="admin_tool", description="Admin only", backend_url="http://c",
-                 risk_level=RiskLevel.high, is_active=True, required_roles=["admin"]),
+                 scope=ToolScope.git, risk_level=RiskLevel.high, is_active=True, required_roles=["admin"]),
             Tool(id=4, name="search_code", description="Search", backend_url="http://d",
-                 risk_level=RiskLevel.low, is_active=True, required_roles=None),
+                 scope=ToolScope.docs, risk_level=RiskLevel.low, is_active=True, required_roles=None),
         ]
     
     @pytest.fixture
@@ -175,7 +183,7 @@ class TestToolCache:
         
         mock_tools = [
             Tool(id=1, name="cached_tool", description="Test", backend_url="http://x",
-                 risk_level=RiskLevel.low, is_active=True, required_roles=None)
+                 scope=ToolScope.calculator, risk_level=RiskLevel.low, is_active=True, required_roles=None)
         ]
         
         claims = UserClaims(user_id="u1", roles=["viewer"])
@@ -206,6 +214,34 @@ class TestToolCache:
         
         assert len(_tool_cache) == 0
 
+    @pytest.mark.asyncio
+    async def test_scope_cache_is_used(self):
+        """Test scoped cache prevents repeated DB calls."""
+        clear_tool_cache()
+
+        mock_tools = [
+            Tool(
+                id=1,
+                name="exact_calculate",
+                description="Calc",
+                backend_url="http://x",
+                scope=ToolScope.calculator,
+                risk_level=RiskLevel.low,
+                is_active=True,
+                required_roles=None,
+            )
+        ]
+
+        with patch("src.registry.service.get_active_tools_by_scope", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = mock_tools
+            db = AsyncMock()
+
+            result1 = await get_tools_by_scope_cached(db, "calculator")
+            result2 = await get_tools_by_scope_cached(db, "calculator")
+
+            assert mock_get.call_count == 1
+            assert result1 == result2
+
 
 class TestToolSync:
     """Tests for syncing tool registry from config."""
@@ -220,6 +256,7 @@ class TestToolSync:
                     name="tool_a",
                     description="Tool A",
                     backend_url="http://a",
+                    scope="calculator",
                     risk_level="low",
                 )
             ]
@@ -258,6 +295,7 @@ class TestToolSync:
                     name="document_generate",
                     description="Deterministic document generation.",
                     backend_url="http://document-generator:8000/mcp",
+                    scope="docs",
                     risk_level="low",
                     input_schema={
                         "type": "object",
@@ -281,6 +319,7 @@ class TestToolSync:
 
                         _, kwargs = mock_create.await_args
                         assert kwargs["name"] == "document_generate"
+                        assert kwargs["scope"] == "docs"
                         assert kwargs["input_schema"]["properties"]["format"]["enum"] == ["docx", "pdf", "html"]
 
     @pytest.mark.asyncio
@@ -290,6 +329,7 @@ class TestToolSync:
             name="document_generate",
             description="Old",
             backend_url="http://document-generator:8000/mcp",
+            scope=ToolScope.docs,
             risk_level=RiskLevel.low,
             required_roles=None,
             is_active=True,
@@ -301,6 +341,7 @@ class TestToolSync:
                     name="document_generate",
                     description="New",
                     backend_url="http://document-generator:8000/mcp",
+                    scope="docs",
                     risk_level="low",
                     input_schema={
                         "type": "object",
@@ -327,3 +368,50 @@ class TestToolSync:
                         assert existing.input_schema["required"] == ["content", "format"]
                         db.commit.assert_awaited()
                         db.refresh.assert_awaited_with(existing)
+
+    @pytest.mark.asyncio
+    async def test_sync_updates_existing_scope(self):
+        existing = Tool(
+            id=1,
+            name="document_generate",
+            description="Doc generator",
+            backend_url="http://document-generator:8000/mcp",
+            scope=ToolScope.calculator,
+            risk_level=RiskLevel.low,
+            required_roles=None,
+            is_active=True,
+            input_schema={"type": "object"},
+        )
+        config = ToolRegistryConfig(
+            tools=[
+                ToolConfig(
+                    name="document_generate",
+                    description="Doc generator",
+                    backend_url="http://document-generator:8000/mcp",
+                    scope="docs",
+                    risk_level="low",
+                    input_schema={"type": "object"},
+                )
+            ]
+        )
+
+        with patch("src.registry.service.load_tool_registry", return_value=config):
+            with patch("src.registry.service.get_tool_by_name", new_callable=AsyncMock) as mock_get:
+                mock_get.return_value = existing
+                with patch("src.registry.service.create_tool", new_callable=AsyncMock):
+                    with patch("src.registry.service.deactivate_tools_not_in_list", new_callable=AsyncMock):
+                        db = AsyncMock()
+                        await sync_tools_from_config(db)
+
+                        assert existing.scope == ToolScope.docs
+                        db.commit.assert_awaited()
+                        db.refresh.assert_awaited_with(existing)
+
+    def test_tool_config_requires_scope(self):
+        with pytest.raises(ValidationError):
+            ToolConfig(
+                name="tool_a",
+                description="Tool A",
+                backend_url="http://a",
+                risk_level="low",
+            )

@@ -4,7 +4,7 @@ import uuid
 from typing import Annotated
 import httpx
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,6 +31,7 @@ router = APIRouter(prefix="/mcp", tags=["gateway"])
 
 @router.post("/invoke", response_model=MCPResponse)
 async def invoke_tool_endpoint(
+    http_request: Request,
     request: InvokeToolRequest,
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -71,6 +72,7 @@ async def invoke_tool_endpoint(
         user=user,
         request=request,
         client=client,
+        endpoint_path=http_request.url.path,
     )
     
     return response

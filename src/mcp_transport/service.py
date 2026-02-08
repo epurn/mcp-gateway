@@ -1,14 +1,15 @@
 """Business logic for MCP protocol handlers."""
 
 import json
-import os
 import re
 from typing import Any, Literal
 from sqlalchemy.ext.asyncio import AsyncSession
 import httpx
 
+from src.audit import log_denied_tool_invocation
 from src.auth.models import AuthenticatedUser
-from src.registry.service import get_tools_for_user, get_all_tools_cached
+from src.auth.exceptions import ToolNotAllowedError
+from src.registry.service import get_tools_for_user, get_all_tools_cached, get_tools_by_scope_cached
 from src.gateway.service import invoke_tool
 from src.gateway.schemas import InvokeToolRequest
 from src.registry.filtering import extract_categories_from_prompt
@@ -27,6 +28,8 @@ from .schemas import (
     MCPContent,
     MCPInitializeParams,
 )
+
+META_TOOL_NAMES = {"find_tools", "call_tool"}
 
 
 def _default_input_schema() -> dict[str, Any]:
@@ -342,28 +345,37 @@ async def handle_find_tools(
 async def handle_tools_list(
     db: AsyncSession,
     user: AuthenticatedUser,
+    scope: str,
     context: str | None = None
 ) -> MCPToolListResult:
-    """Handle tools/list request with smart routing.
+    """Handle tools/list request scoped to a single endpoint.
     
     Args:
         db: Database session.
         user: Authenticated user.
-        context: Optional context for tool filtering.
+        scope: Endpoint scope.
+        context: Unused in v2 scoped list flow.
         
     Returns:
         List of tools available to the user.
     """
-    strategy = os.getenv("TOOL_FILTER_STRATEGY", "minimal")
-    return await handle_tools_list_smart(db, user, context, strategy=strategy)
+    scoped_tools = await get_tools_by_scope_cached(db, scope)
+    visible_tools = [
+        _to_mcp_tool(tool)
+        for tool in scoped_tools
+        if _is_tool_accessible(tool, user) and getattr(tool, "name", "") not in META_TOOL_NAMES
+    ]
+    return MCPToolListResult(tools=visible_tools)
 
 
 async def handle_tools_call(
     db: AsyncSession,
     user: AuthenticatedUser,
     client: httpx.AsyncClient,
+    scope: str,
     name: str,
-    arguments: dict[str, Any]
+    arguments: dict[str, Any],
+    endpoint_path: str = "/unknown",
 ) -> MCPToolCallResult:
     """Handle tools/call request.
     
@@ -371,12 +383,39 @@ async def handle_tools_call(
         db: Database session.
         user: Authenticated user.
         client: HTTP client for backend requests.
+        scope: Endpoint scope.
         name: Tool name to invoke.
         arguments: Tool arguments.
+        endpoint_path: API endpoint path used for invocation.
         
     Returns:
         Tool execution result.
     """
+    all_tools = await get_all_tools_cached(db)
+    tool = next((t for t in all_tools if t.name == name), None)
+    if tool is None:
+        await log_denied_tool_invocation(
+            db=db,
+            user_id=user.user_id,
+            tool_name=name,
+            endpoint_path=endpoint_path,
+            error_code="TOOL_NOT_FOUND",
+        )
+        return MCPToolCallResult(
+            content=[MCPContent(type="text", text=f"Error: Tool '{name}' not found")],
+            isError=True,
+        )
+
+    if tool.scope.value != scope:
+        await log_denied_tool_invocation(
+            db=db,
+            user_id=user.user_id,
+            tool_name=name,
+            endpoint_path=endpoint_path,
+            error_code="TOOL_NOT_IN_SCOPE",
+        )
+        raise ToolNotAllowedError(tool_name=name, user_id=user.user_id)
+
     # Create invoke request
     request = InvokeToolRequest(
         tool_name=name,
@@ -389,7 +428,8 @@ async def handle_tools_call(
             db=db,
             user=user,
             request=request,
-            client=client
+            client=client,
+            endpoint_path=endpoint_path,
         )
         
         # Increment usage counter if successful
@@ -416,6 +456,8 @@ async def handle_tools_call(
             isError=False
         )
         
+    except ToolNotAllowedError:
+        raise
     except Exception as e:
         return MCPToolCallResult(
             content=[MCPContent(

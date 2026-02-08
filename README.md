@@ -28,15 +28,19 @@ Instead of giving agents direct, unchecked access to your internal APIs or datab
   - Proxies JSON-RPC 2.0 requests to compliant MCP tool servers.
 
 ## 🏗️ Architecture
-The Gateway sits between your Agents (Clients) and your MCP Servers (Backends):
+Nginx is the external ingress, and the gateway enforces scoped MCP access before routing to tool backends:
 
 ```mermaid
 graph LR
-    Client[AI Agent] -->|JWT (iss/aud/exp)| Gateway[MCP Gateway]
-    Gateway -->|Log| DB[(PostgreSQL)]
+    Client[AI Agent / MCP Client] -->|JWT + JSON-RPC| Nginx[Nginx Ingress :8000]
+    Nginx -->|POST /calculator/sse| Gateway[MCP Gateway]
+    Nginx -->|POST /git/sse| Gateway
+    Nginx -->|POST /docs/sse| Gateway
+
+    Gateway -->|Audit log| DB[(PostgreSQL)]
     Gateway -->|MCP + X-Gateway-Auth + X-User-ID| ToolA[Calculator MCP]
     Gateway -->|MCP + X-Gateway-Auth + X-User-ID| ToolB[Git Read-Only MCP]
-    Gateway -->|MCP + X-Gateway-Auth + X-User-ID| ToolC[Document Generation MCP]
+    Gateway -->|MCP + X-Gateway-Auth + X-User-ID| ToolC[Document Generator MCP]
 ```
 
 ## 🧰 v1 Tool Set
@@ -49,40 +53,20 @@ Each tool is a separate containerized service and exposes:
 - `GET /health`
 - `POST /mcp` (JSON-RPC 2.0 tool call endpoint)
 
-## 🔍 Smart Routing (Meta-Tools)
+## 🔌 Scoped MCP Endpoints (v2)
 
-As your tool registry grows, exposing all tools via `tools/list` creates scalability issues. The Gateway implements a **meta-tool pattern** for dynamic discovery:
+The gateway exposes separate MCP SSE endpoints per tool scope:
 
-### Core Tools (Always Available)
-| Tool | Description |
-|------|-------------|
-| `find_tools` | Search for tools by describing what you want to do |
-| `call_tool` | Invoke a discovered tool by name with arguments |
+- `POST /calculator/sse`
+- `POST /git/sse`
+- `POST /docs/sse`
 
-### Usage Flow
-```
-1. LLM calls find_tools("generate PDF document")
-   → Returns: document_generate schema with inputSchema
+When a client connects to one endpoint, `tools/list` only returns tools in that scope (subject to user permissions), and `tools/call` is enforced to that same scope.
 
-2. LLM calls call_tool(name="document_generate", arguments={...})
-   → Returns: Generated document result
-```
-
-### Example
-```python
-# Discover tools
-find_tools(query="convert units", max_results=3)
-# Returns schemas for: exact_convert_units, exact_unit_arithmetic
-
-# Invoke discovered tool  
-call_tool(
-    name="exact_calculate",
-    arguments={"operator": "mul", "operands": ["1100", "0.09290304"]}
-)
-# Returns: {"result": "102.193344"}
-```
-
-This pattern scales to 100s of tools while keeping the initial tool list minimal.
+### v2 Hard Breaks
+- Unified `POST /sse` is removed.
+- `POST /messages` is removed.
+- Meta-tools `find_tools` and `call_tool` are removed.
 
 ## 🗂️ Tool Registry (Static)
 Tool definitions live in `config/tools.yaml` and are synced into the registry at gateway startup. Access is filtered by `config/policy.yaml`.
@@ -112,18 +96,19 @@ For local development, you can copy `.env.example` to `.env.development` and use
 docker compose -f docker/docker-compose.yml up -d --build
 ```
 This brings up:
-- `gateway` (exposed on port 8000)
+- `nginx` (exposed on port 8000)
+- `gateway` (internal network only)
 - `db` (internal network only)
 - `calculator` (internal network only)
 - `document_generator` (internal network only)
 
-Tools are not exposed to the host; the gateway is the only entrypoint.
+Tools are not exposed to the host; Nginx is the only external entrypoint.
 
-### 3) Build and Start (Dev Ports)
+### 3) Build and Start (Dev Overrides)
 ```bash
 docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml up -d --build
 ```
-This publishes database and tool ports for local debugging while keeping the internal network in place.
+This applies development environment overrides while keeping the same network exposure model.
 
 ### 3b) Optional: Start Dummy JWT Issuer (Near-Prod Auth Testing)
 ```bash
@@ -162,19 +147,19 @@ curl -sS -X POST "http://localhost:8000/mcp/invoke" \
   -d '{"tool_name":"exact_calculate","arguments":{"operator":"add","operands":["1.2","2.3"],"precision":28}}'
 ```
 
-### 5) Connect via Antigravity (or other MCP Clients)
-Use the repo bridge script to connect a stdio MCP client to the Gateway SSE endpoint. The bridge auto-issues a short-lived JWT from the dummy issuer.
+### 5) Connect via MCP Clients (Scoped Endpoints)
+Use the repo bridge script to connect stdio MCP clients to a scoped SSE endpoint. The bridge auto-issues a short-lived JWT from the dummy issuer.
 
-**Config:**
+For a single scope, pass the scoped endpoint explicitly:
 ```json
 {
   "mcpServers": {
-    "gateway": {
+    "gateway-calculator": {
       "command": "node",
       "args": [
         "scripts/mcp_http_bridge.js",
         "--endpoint",
-        "http://localhost:8000/sse",
+        "http://localhost:8000/calculator/sse",
         "--issuer-url",
         "http://localhost:8010/token",
         "--user-id",
@@ -191,61 +176,38 @@ Use the repo bridge script to connect a stdio MCP client to the Gateway SSE endp
 *Note: schema keys differ by client; VS Code uses `servers` (see below).*
 
 ### VS Code / Continue Example
-Use the workspace `.vscode/mcp.json` format:
+Use the workspace `.vscode/mcp.json` format with one server per scope:
 ```json
 {
   "servers": {
-    "gateway": {
+    "gateway-calculator": {
       "type": "stdio",
       "command": "node",
-      "args": [
-        "scripts/mcp_http_bridge.js",
-        "--endpoint",
-        "http://localhost:8000/sse",
-        "--issuer-url",
-        "http://localhost:8010/token",
-        "--user-id",
-        "demo",
-        "--roles",
-        "developer",
-        "--workspace",
-        "demo"
-      ]
+      "args": ["scripts/mcp_http_bridge.js", "--endpoint", "http://localhost:8000/calculator/sse", "--issuer-url", "http://localhost:8010/token", "--user-id", "demo", "--roles", "developer", "--workspace", "demo"]
+    },
+    "gateway-git": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["scripts/mcp_http_bridge.js", "--endpoint", "http://localhost:8000/git/sse", "--issuer-url", "http://localhost:8010/token", "--user-id", "demo", "--roles", "developer", "--workspace", "demo"]
+    },
+    "gateway-docs": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["scripts/mcp_http_bridge.js", "--endpoint", "http://localhost:8000/docs/sse", "--issuer-url", "http://localhost:8010/token", "--user-id", "demo", "--roles", "developer", "--workspace", "demo"]
     }
   }
 }
 ```
+Tracked example file: `docs/examples/vscode.mcp.json`.
 
 ### 6) Test with a Real LLM (MCP Client)
 Use any MCP-compatible client (e.g., Claude Desktop, Continue, or your own MCP client) that supports stdio-based MCP servers.
 
-1. Start the gateway and tools (Docker Compose).
-2. Configure your MCP client to run the repo bridge as the MCP server:
-   ```json
-   {
-     "mcpServers": {
-       "gateway": {
-         "command": "node",
-         "args": [
-           "scripts/mcp_http_bridge.js",
-           "--endpoint",
-           "http://localhost:8000/sse",
-           "--issuer-url",
-           "http://localhost:8010/token",
-           "--user-id",
-           "demo",
-           "--roles",
-           "developer",
-           "--workspace",
-           "demo"
-         ]
-       }
-     }
-   }
-   ```
-3. Prompt your LLM:
-   - “Find tools to generate a PDF report.”
-   - “Call document_generate with a short Markdown report.”
+1. Start the stack (Docker Compose).
+2. Configure one or more scoped MCP servers using the bridge script.
+3. Prompt your LLM in each server context:
+   - Calculator: “Calculate the average of 1, 2, and 3.”
+   - Docs: “Generate a short PDF report in Markdown.”
 
 ## 🧪 Development Deployment (Local Python)
 
@@ -298,7 +260,8 @@ uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 
 ## 📖 Documentation
 - [Deployment Guide](docs/deployment.md)
-- [/docs](http://localhost:8000/docs) - Interactive API documentation (Swagger UI)
+- [V2 Release Checklist](docs/release_checklist_v2_scoped_endpoints.md)
+- Interactive API docs are available from the gateway service directly (`/docs`) when exposed in your environment.
 
 ## 🧪 Testing
 Run the test suite with coverage reporting:

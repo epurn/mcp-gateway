@@ -41,6 +41,14 @@ class RiskLevel(str, Enum):
     high = "high"
 
 
+class ToolScope(str, Enum):
+    """Scope classification used for endpoint-level tool segregation."""
+
+    calculator = "calculator"
+    git = "git"
+    docs = "docs"
+
+
 class Tool(Base):
     """Tool definition stored in the registry.
     
@@ -49,6 +57,7 @@ class Tool(Base):
         name: Unique tool identifier (e.g., "read_file").
         description: Human-readable description of the tool.
         backend_url: URL to route tool requests to.
+        scope: Endpoint scope for tool exposure and routing.
         risk_level: Risk classification for policy checks.
         required_roles: Optional list of roles required to use this tool.
         is_active: Whether the tool is available for use.
@@ -80,6 +89,11 @@ class Tool(Base):
         String(500),
         nullable=False,
         comment="URL to route requests to"
+    )
+    scope: Mapped[ToolScope] = mapped_column(
+        SQLAlchemyEnum(ToolScope, name="tool_scope_enum"),
+        nullable=False,
+        comment="Endpoint scope for tool exposure and routing"
     )
     risk_level: Mapped[RiskLevel] = mapped_column(
         SQLAlchemyEnum(RiskLevel, name="risk_level_enum"),
@@ -142,4 +156,7 @@ class Tool(Base):
     
     def __repr__(self) -> str:
         """String representation for debugging."""
-        return f"<Tool(name='{self.name}', risk_level={self.risk_level.value}, active={self.is_active})>"
+        return (
+            f"<Tool(name='{self.name}', scope={self.scope.value}, "
+            f"risk_level={self.risk_level.value}, active={self.is_active})>"
+        )

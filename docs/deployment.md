@@ -41,9 +41,38 @@ Run migrations before starting the main application container.
 alembic upgrade head
 ```
 
+## MCP Endpoint Model (v2)
+The gateway now exposes scoped MCP SSE endpoints:
+
+- `POST /calculator/sse`
+- `POST /git/sse`
+- `POST /docs/sse`
+
+Each endpoint requires JWT auth and only exposes tools in that scope.
+
+### Hard Breaks from v1
+- Unified `POST /sse` is removed.
+- `POST /messages` is removed.
+- Meta-tools `find_tools` and `call_tool` are removed from `tools/list` and cannot be called.
+
 ## Tool Authentication
 Tools require the `X-Gateway-Auth` header matching `TOOL_GATEWAY_SHARED_SECRET`.
 Ensure the gateway and tool containers share the same secret.
+
+## Reverse Proxy
+Use Nginx as the external ingress and route paths to the gateway:
+
+- `/calculator/sse` -> `gateway:8000/calculator/sse`
+- `/git/sse` -> `gateway:8000/git/sse`
+- `/docs/sse` -> `gateway:8000/docs/sse`
+- `/health` -> `gateway:8000/health`
+
+Do not expose tool containers directly to the host network.
+
+## VS Code MCP Config Example
+Use `.vscode/mcp.json` with one server per scope. A tracked example is provided at:
+
+- `docs/examples/vscode.mcp.json`
 
 ## Near-Prod JWT E2E Testing
 Use `docker/docker-compose.auth-test.yml` to add a dummy JWT issuer service for integration tests:

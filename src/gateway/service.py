@@ -69,6 +69,7 @@ async def invoke_tool(
     user: AuthenticatedUser,
     request: InvokeToolRequest,
     client: httpx.AsyncClient,
+    endpoint_path: str = "/unknown",
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
     max_payload_bytes: int = DEFAULT_MAX_PAYLOAD_BYTES,
 ) -> MCPResponse:
@@ -86,6 +87,7 @@ async def invoke_tool(
         user: Authenticated user making the request.
         request: Tool invocation request.
         client: HTTP client for backend requests.
+        endpoint_path: API endpoint path used for invocation.
         timeout: Backend request timeout.
         max_payload_bytes: Maximum payload size.
         
@@ -107,6 +109,7 @@ async def invoke_tool(
         request_id=request_id,
         user_id=user.user_id,
         tool_name=request.tool_name,
+        endpoint_path=endpoint_path,
     ) as audit_ctx:
         try:
             # 1. Validate payload size

@@ -85,7 +85,8 @@ async def process_job_task(
                     db=db,
                     user=user,
                     request=request,
-                    client=client
+                    client=client,
+                    endpoint_path="/mcp/jobs",
                 )
                 
                 # 3. Check for error in response

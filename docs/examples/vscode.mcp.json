@@ -1,0 +1,55 @@
+﻿{
+  "servers": {
+    "gateway-calculator": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "scripts/mcp_http_bridge.js",
+        "--endpoint",
+        "http://localhost:8000/calculator/sse",
+        "--issuer-url",
+        "http://localhost:8010/token",
+        "--user-id",
+        "demo",
+        "--roles",
+        "developer",
+        "--workspace",
+        "demo"
+      ]
+    },
+    "gateway-git": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "scripts/mcp_http_bridge.js",
+        "--endpoint",
+        "http://localhost:8000/git/sse",
+        "--issuer-url",
+        "http://localhost:8010/token",
+        "--user-id",
+        "demo",
+        "--roles",
+        "developer",
+        "--workspace",
+        "demo"
+      ]
+    },
+    "gateway-docs": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "scripts/mcp_http_bridge.js",
+        "--endpoint",
+        "http://localhost:8000/docs/sse",
+        "--issuer-url",
+        "http://localhost:8010/token",
+        "--user-id",
+        "demo",
+        "--roles",
+        "developer",
+        "--workspace",
+        "demo"
+      ]
+    }
+  }
+}

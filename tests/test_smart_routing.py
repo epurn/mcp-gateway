@@ -18,7 +18,7 @@ from src.registry.repository import (
     search_tools_by_embedding,
     increment_tool_usage
 )
-from src.registry.models import Tool, RiskLevel
+from src.registry.models import Tool, RiskLevel, ToolScope
 
 
 def _embedding_model_cached() -> bool:
@@ -198,7 +198,7 @@ class TestRepositoryFunctions:
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = [
             Tool(id=1, name="calc", description="Calculator", backend_url="http://x",
-                 risk_level=RiskLevel.low, is_active=True, categories=["math"])
+                 scope=ToolScope.calculator, risk_level=RiskLevel.low, is_active=True, categories=["math"])
         ]
         db.execute.return_value = mock_result
         
@@ -218,7 +218,7 @@ class TestRepositoryFunctions:
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = [
             Tool(id=1, name="help", description="Help", backend_url="http://x",
-                 risk_level=RiskLevel.low, is_active=True, categories=["core"])
+                 scope=ToolScope.calculator, risk_level=RiskLevel.low, is_active=True, categories=["core"])
         ]
         db.execute.return_value = mock_result
         
