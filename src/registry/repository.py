@@ -1,9 +1,8 @@
 """Repository layer for tool registry data access."""
 
-from sqlalchemy import select, update, func, cast
+from sqlalchemy import select, update, func, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import ARRAY
-from sqlalchemy.types import Text
 
 from .models import Tool, PGVECTOR_AVAILABLE
 
@@ -44,7 +43,8 @@ async def create_tool(
     backend_url: str,
     risk_level: str = "low",
     required_roles: list[str] | None = None,
-    is_active: bool = True
+    is_active: bool = True,
+    input_schema: dict | None = None,
 ) -> Tool:
     """Create a new tool in the registry.
     
@@ -56,6 +56,7 @@ async def create_tool(
         risk_level: Risk classification (low, medium, high).
         required_roles: Optional role requirements.
         is_active: Whether tool is available.
+        input_schema: Optional JSON schema for tool arguments.
         
     Returns:
         Created Tool object.
@@ -68,7 +69,8 @@ async def create_tool(
         backend_url=backend_url,
         risk_level=RiskLevel(risk_level),
         required_roles=required_roles,
-        is_active=is_active
+        is_active=is_active,
+        input_schema=input_schema,
     )
     db.add(tool)
     await db.commit()
@@ -87,7 +89,7 @@ async def get_tools_by_categories(
     # Filter by categories (matches ANY category in the list)
     if categories:
         query = query.where(
-            Tool.categories.overlap(cast(categories, ARRAY(Text)))
+            Tool.categories.overlap(cast(categories, ARRAY(String(50))))
         )
     
     # Apply user permissions if needed
@@ -101,7 +103,7 @@ async def get_core_tools(db: AsyncSession) -> list[Tool]:
     """Get core tools that should always be available."""
     query = select(Tool).where(
         Tool.is_active == True,
-        Tool.categories.overlap(cast(['core'], ARRAY(Text)))
+        Tool.categories.overlap(cast(['core'], ARRAY(String(50))))
     )
     result = await db.execute(query)
     return list(result.scalars().all())

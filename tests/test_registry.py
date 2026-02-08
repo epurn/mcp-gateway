@@ -249,3 +249,81 @@ class TestToolSync:
 
                 mock_prune.assert_not_awaited()
                 assert len(_tool_cache) == 0
+
+    @pytest.mark.asyncio
+    async def test_sync_create_passes_input_schema(self):
+        config = ToolRegistryConfig(
+            tools=[
+                ToolConfig(
+                    name="document_generate",
+                    description="Deterministic document generation.",
+                    backend_url="http://document-generator:8000/mcp",
+                    risk_level="low",
+                    input_schema={
+                        "type": "object",
+                        "properties": {
+                            "content": {"type": "string"},
+                            "format": {"type": "string", "enum": ["docx", "pdf", "html"]},
+                        },
+                        "required": ["content", "format"],
+                    },
+                )
+            ]
+        )
+
+        with patch("src.registry.service.load_tool_registry", return_value=config):
+            with patch("src.registry.service.get_tool_by_name", new_callable=AsyncMock) as mock_get:
+                mock_get.return_value = None
+                with patch("src.registry.service.create_tool", new_callable=AsyncMock) as mock_create:
+                    with patch("src.registry.service.deactivate_tools_not_in_list", new_callable=AsyncMock):
+                        db = AsyncMock()
+                        await sync_tools_from_config(db)
+
+                        _, kwargs = mock_create.await_args
+                        assert kwargs["name"] == "document_generate"
+                        assert kwargs["input_schema"]["properties"]["format"]["enum"] == ["docx", "pdf", "html"]
+
+    @pytest.mark.asyncio
+    async def test_sync_updates_existing_input_schema(self):
+        existing = Tool(
+            id=1,
+            name="document_generate",
+            description="Old",
+            backend_url="http://document-generator:8000/mcp",
+            risk_level=RiskLevel.low,
+            required_roles=None,
+            is_active=True,
+            input_schema={"type": "object", "properties": {}},
+        )
+        config = ToolRegistryConfig(
+            tools=[
+                ToolConfig(
+                    name="document_generate",
+                    description="New",
+                    backend_url="http://document-generator:8000/mcp",
+                    risk_level="low",
+                    input_schema={
+                        "type": "object",
+                        "properties": {
+                            "content": {"type": "string"},
+                            "format": {"type": "string", "enum": ["docx", "pdf", "html"]},
+                        },
+                        "required": ["content", "format"],
+                    },
+                )
+            ]
+        )
+
+        with patch("src.registry.service.load_tool_registry", return_value=config):
+            with patch("src.registry.service.get_tool_by_name", new_callable=AsyncMock) as mock_get:
+                mock_get.return_value = existing
+                with patch("src.registry.service.create_tool", new_callable=AsyncMock) as mock_create:
+                    with patch("src.registry.service.deactivate_tools_not_in_list", new_callable=AsyncMock):
+                        db = AsyncMock()
+                        await sync_tools_from_config(db)
+
+                        mock_create.assert_not_awaited()
+                        assert existing.description == "New"
+                        assert existing.input_schema["required"] == ["content", "format"]
+                        db.commit.assert_awaited()
+                        db.refresh.assert_awaited_with(existing)

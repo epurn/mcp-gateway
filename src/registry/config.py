@@ -1,6 +1,7 @@
 """Static tool registry config loader."""
 
 from pathlib import Path
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field
@@ -15,6 +16,7 @@ class ToolConfig(BaseModel):
     risk_level: str = "low"
     required_roles: list[str] | None = None
     is_active: bool = True
+    input_schema: dict[str, Any] | None = None
 
 
 class ToolRegistryConfig(BaseModel):

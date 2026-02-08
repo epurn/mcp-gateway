@@ -82,6 +82,7 @@ async def _handle_sse_post(
                 import json
                 result_data = await handle_find_tools(
                     db=db,
+                    user=user,
                     query=call_params.arguments.get("query", ""),
                     max_results=call_params.arguments.get("max_results", 5),
                 )

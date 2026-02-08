@@ -55,6 +55,7 @@ async def sync_tools_from_config(db: "AsyncSession", config_path: str | None = N
                 risk_level=tool.risk_level,
                 required_roles=tool.required_roles or None,
                 is_active=tool.is_active,
+                input_schema=tool.input_schema,
             )
             continue
 
@@ -73,6 +74,9 @@ async def sync_tools_from_config(db: "AsyncSession", config_path: str | None = N
             updated = True
         if existing.is_active != tool.is_active:
             existing.is_active = tool.is_active
+            updated = True
+        if existing.input_schema != tool.input_schema:
+            existing.input_schema = tool.input_schema
             updated = True
 
         if updated:

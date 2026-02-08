@@ -2,12 +2,13 @@
 
 import json
 import os
+import re
 from typing import Any, Literal
 from sqlalchemy.ext.asyncio import AsyncSession
 import httpx
 
 from src.auth.models import AuthenticatedUser
-from src.registry.service import get_tools_for_user
+from src.registry.service import get_tools_for_user, get_all_tools_cached
 from src.gateway.service import invoke_tool
 from src.gateway.schemas import InvokeToolRequest
 from src.registry.filtering import extract_categories_from_prompt
@@ -26,6 +27,112 @@ from .schemas import (
     MCPContent,
     MCPInitializeParams,
 )
+
+
+def _default_input_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": True,
+    }
+
+
+def _build_meta_tools() -> list[MCPTool]:
+    return [
+        MCPTool(
+            name="find_tools",
+            description="Discover available tools by intent and return tool schemas.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "User intent or task description."},
+                    "max_results": {"type": "integer", "minimum": 1, "maximum": 20, "default": 5},
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        ),
+        MCPTool(
+            name="call_tool",
+            description="Invoke a discovered tool by name with explicit arguments.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Discovered tool name to invoke."},
+                    "arguments": {"type": "object", "default": {}},
+                },
+                "required": ["name"],
+                "additionalProperties": False,
+            },
+        ),
+    ]
+
+
+def _to_mcp_tool(tool: Any) -> MCPTool:
+    return MCPTool(
+        name=getattr(tool, "name"),
+        description=getattr(tool, "description"),
+        inputSchema=getattr(tool, "input_schema", None) or _default_input_schema(),
+    )
+
+
+def _merge_with_meta_tools(tools: list[MCPTool]) -> list[MCPTool]:
+    merged: list[MCPTool] = []
+    seen_names: set[str] = set()
+
+    for tool in [*_build_meta_tools(), *tools]:
+        if tool.name in seen_names:
+            continue
+        merged.append(tool)
+        seen_names.add(tool.name)
+
+    return merged
+
+
+def _is_tool_accessible(tool: Any, user: AuthenticatedUser) -> bool:
+    if "*" not in user.allowed_tools and getattr(tool, "name", "") not in user.allowed_tools:
+        return False
+
+    required_roles = getattr(tool, "required_roles", None) or []
+    if required_roles and not any(role in user.roles for role in required_roles):
+        return False
+
+    return True
+
+
+def _tool_discovery_payload(tool: Any) -> dict[str, Any]:
+    return {
+        "name": getattr(tool, "name"),
+        "description": getattr(tool, "description"),
+        "inputSchema": getattr(tool, "input_schema", None) or _default_input_schema(),
+    }
+
+
+def _tool_match_score(tool: Any, query: str, categories: set[str]) -> int:
+    query_lower = query.lower().strip()
+    if not query_lower:
+        return 0
+
+    name = (getattr(tool, "name", "") or "").lower()
+    description = (getattr(tool, "description", "") or "").lower()
+    text = f"{name} {description}"
+
+    score = 0
+    if query_lower in text:
+        score += 5
+
+    terms = [term for term in re.split(r"[^a-z0-9]+", query_lower) if term]
+    for term in terms:
+        if term in name:
+            score += 3
+        elif term in description:
+            score += 1
+
+    tool_categories = set(getattr(tool, "categories", []) or [])
+    if categories and tool_categories.intersection(categories):
+        score += 2
+
+    return score
 
 
 async def handle_initialize(params: MCPInitializeParams) -> dict[str, Any]:
@@ -70,24 +177,10 @@ async def handle_tools_list_smart(
     Returns:
         Filtered list of relevant tools
     """
-    # NEW: Minimal strategy - return only core tools from database
-    # (find_tools is stored as a core tool in the registry)
     if strategy == "minimal":
         core_tools = await get_core_tools(db)
-        
-        mcp_tools = []
-        for tool in core_tools:
-            mcp_tools.append(MCPTool(
-                name=tool.name,
-                description=tool.description,
-                inputSchema=tool.input_schema or {
-                    "type": "object",
-                    "properties": {},
-                    "additionalProperties": True
-                }
-            ))
-        
-        return MCPToolListResult(tools=mcp_tools)
+        mcp_tools = [_to_mcp_tool(tool) for tool in core_tools]
+        return MCPToolListResult(tools=_merge_with_meta_tools(mcp_tools))
     
     # LEGACY: Full smart routing for other strategies
     tools_to_return = []
@@ -160,28 +253,13 @@ async def handle_tools_list_smart(
                 pass
     
     # Convert to MCP format
-    mcp_tools = []
-    for tool in tools_to_return:
-        # Handle both physical Tool models and ToolResponse schemas
-        name = getattr(tool, "name")
-        description = getattr(tool, "description")
-        input_schema = getattr(tool, "input_schema", None)
-        
-        mcp_tools.append(MCPTool(
-            name=name,
-            description=description,
-            inputSchema=input_schema or {
-                "type": "object",
-                "properties": {},
-                "additionalProperties": True
-            }
-        ))
-    
-    return MCPToolListResult(tools=mcp_tools)
+    mcp_tools = [_to_mcp_tool(tool) for tool in tools_to_return]
+    return MCPToolListResult(tools=_merge_with_meta_tools(mcp_tools))
 
 
 async def handle_find_tools(
     db: AsyncSession,
+    user: AuthenticatedUser,
     query: str,
     max_results: int = 5
 ) -> dict:
@@ -198,43 +276,67 @@ async def handle_find_tools(
     Returns:
         Dictionary with discovered tools and their schemas
     """
-    try:
-        # Use semantic search to find relevant tools
-        query_embedding = await generate_embedding(query)
-        tools = await search_tools_by_embedding(
-            db, 
-            query_embedding, 
-            top_k=max_results,
-            threshold=0.3
+    errors: list[str] = []
+    query = (query or "").strip()
+    max_results = max(1, min(max_results, 20))
+
+    semantic_tools: list[Any] = []
+    if query:
+        try:
+            query_embedding = await generate_embedding(query)
+            semantic_tools = await search_tools_by_embedding(
+                db,
+                query_embedding,
+                top_k=max_results,
+                threshold=0.3,
+            )
+        except Exception as e:
+            errors.append(str(e))
+
+    discovered_tools: list[dict[str, Any]] = []
+    seen_names: set[str] = set()
+    for tool in semantic_tools:
+        if not _is_tool_accessible(tool, user):
+            continue
+        name = getattr(tool, "name", "")
+        if name in seen_names:
+            continue
+        discovered_tools.append(_tool_discovery_payload(tool))
+        seen_names.add(name)
+
+    if len(discovered_tools) < max_results:
+        all_tools = await get_all_tools_cached(db)
+        accessible_tools = [tool for tool in all_tools if _is_tool_accessible(tool, user)]
+        categories = extract_categories_from_prompt(query)
+
+        ranked = sorted(
+            accessible_tools,
+            key=lambda tool: (
+                _tool_match_score(tool, query, categories),
+                getattr(tool, "name", ""),
+            ),
+            reverse=True,
         )
-        
-        # Return tool schemas that LLM can use immediately
-        discovered_tools = []
-        for tool in tools:
-            discovered_tools.append({
-                "name": tool.name,
-                "description": tool.description,
-                "inputSchema": tool.input_schema or {
-                    "type": "object",
-                    "properties": {},
-                    "additionalProperties": True
-                }
-            })
-        
-        return {
-            "query": query,
-            "found": len(discovered_tools),
-            "tools": discovered_tools,
-            "message": f"Found {len(discovered_tools)} tool(s) matching '{query}'. You can now use these tools directly."
-        }
-    except Exception as e:
-        return {
-            "query": query,
-            "found": 0,
-            "tools": [],
-            "error": str(e),
-            "message": "Tool search failed. Please try a different query."
-        }
+        for tool in ranked:
+            name = getattr(tool, "name", "")
+            if name in seen_names:
+                continue
+            if query and _tool_match_score(tool, query, categories) <= 0:
+                continue
+            discovered_tools.append(_tool_discovery_payload(tool))
+            seen_names.add(name)
+            if len(discovered_tools) >= max_results:
+                break
+
+    response: dict[str, Any] = {
+        "query": query,
+        "found": len(discovered_tools),
+        "tools": discovered_tools,
+        "message": f"Found {len(discovered_tools)} tool(s) matching '{query}'. You can now use these tools directly.",
+    }
+    if errors and len(discovered_tools) == 0:
+        response["error"] = "; ".join(errors)
+    return response
 
 
 async def handle_tools_list(

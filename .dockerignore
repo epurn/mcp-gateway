@@ -87,3 +87,4 @@ brain/
 .gemini/
 .system_generated/
 scripts/verify_downloads.py
+model_cache/

@@ -109,7 +109,7 @@ For local development, you can copy `.env.example` to `.env.development` and use
 
 ### 2) Build and Start (Locked Networking)
 ```bash
-docker compose up -d --build
+docker compose -f docker/docker-compose.yml up -d --build
 ```
 This brings up:
 - `gateway` (exposed on port 8000)
@@ -121,13 +121,13 @@ Tools are not exposed to the host; the gateway is the only entrypoint.
 
 ### 3) Build and Start (Dev Ports)
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml up -d --build
 ```
 This publishes database and tool ports for local debugging while keeping the internal network in place.
 
 ### 3b) Optional: Start Dummy JWT Issuer (Near-Prod Auth Testing)
 ```bash
-docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml -f docker/docker-compose.auth-test.yml up -d --build
+docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml -f docker/docker-compose.auth-test.yml up -d --build jwt_issuer
 ```
 This adds `jwt_issuer` on `http://localhost:8010` for end-to-end JWT flow testing.
 If `JWT_ISSUER_ADMIN_TOKEN` is set, include `X-Issuer-Token` when requesting tokens.
@@ -263,7 +263,7 @@ If the gateway runs on the host, update `config/tools.yaml` to point at `http://
 
 ### 2) Start Infrastructure and Tools
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db calculator document_generator
+docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml up -d db calculator document_generator
 ```
 
 ### 3) Run Gateway
@@ -304,5 +304,5 @@ uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 Run the test suite with coverage reporting:
 ```bash
 pip install -r requirements-dev.txt
-pytest --cov=src
+python -m pytest -p no:cacheprovider --cov=src
 ```

@@ -143,6 +143,10 @@ No additional tools may be added in v1.
 - Prefer bridge args that auto-issue dev JWTs from `http://localhost:8010/token`; do not hardcode long-lived tokens in docs
 - Treat `docker/docker-compose.auth-test.yml` + `services/jwt_issuer` as development-only auth test infrastructure
 - Remove temporary debug/test helpers after validation unless they provide clear ongoing value
+- When asked to do document conversion/generation or exact computation, prefer MCP meta-tool flow first:
+  - discover with `find_tools`
+  - invoke with `call_tool`
+  Use direct/non-MCP alternatives only if MCP tools are unavailable or the user explicitly asks.
 
 ---
 

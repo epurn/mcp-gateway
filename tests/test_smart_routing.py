@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
+from sqlalchemy.dialects import postgresql
 
 from src.registry.filtering import (
     extract_categories_from_prompt,
@@ -204,6 +205,11 @@ class TestRepositoryFunctions:
         tools = await get_tools_by_categories(db, ["math"])
         assert len(tools) == 1
         assert tools[0].name == "calc"
+
+        stmt = db.execute.call_args.args[0]
+        compiled = str(stmt.compile(dialect=postgresql.dialect()))
+        assert "VARCHAR(50)[]" in compiled
+        assert "TEXT[]" not in compiled
     
     @pytest.mark.asyncio
     async def test_get_core_tools(self):
@@ -219,6 +225,11 @@ class TestRepositoryFunctions:
         tools = await get_core_tools(db)
         assert len(tools) == 1
         assert "core" in tools[0].categories
+
+        stmt = db.execute.call_args.args[0]
+        compiled = str(stmt.compile(dialect=postgresql.dialect()))
+        assert "VARCHAR(50)[]" in compiled
+        assert "TEXT[]" not in compiled
     
     @pytest.mark.asyncio
     async def test_increment_tool_usage(self):

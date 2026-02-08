@@ -1,31 +1,141 @@
-﻿tools:
+tools:
   - name: "exact_calculate"
     description: "Deterministic high-precision arithmetic calculations."
     backend_url: "http://calculator:8000/mcp"
     risk_level: "low"
     required_roles: []
     is_active: true
+    input_schema:
+      type: "object"
+      properties:
+        operator:
+          type: "string"
+          enum: ["add", "sub", "mul", "div"]
+          description: "Arithmetic operation to perform."
+        operands:
+          type: "array"
+          items:
+            type: "string"
+          minItems: 1
+          description: "Decimal numbers as strings."
+        precision:
+          type: "integer"
+          minimum: 1
+          maximum: 100
+          description: "Significant digits (default: 28)."
+      required: ["operator", "operands"]
+      additionalProperties: false
+
   - name: "exact_statistics"
     description: "Deterministic statistics (mean, median, variance, deviation)."
     backend_url: "http://calculator:8000/mcp"
     risk_level: "low"
     required_roles: []
     is_active: true
+    input_schema:
+      type: "object"
+      properties:
+        values:
+          type: "array"
+          items:
+            type: "string"
+          minItems: 1
+          description: "Decimal numbers as strings."
+        operations:
+          type: "array"
+          items:
+            type: "string"
+            enum: ["mean", "median", "variance", "std", "min", "max", "sum", "count"]
+          description: "Statistics to calculate."
+        precision:
+          type: "integer"
+          minimum: 1
+          maximum: 100
+          description: "Significant digits (default: 28)."
+      required: ["values"]
+      additionalProperties: false
+
   - name: "exact_convert_units"
     description: "Deterministic unit conversion."
     backend_url: "http://calculator:8000/mcp"
     risk_level: "low"
     required_roles: []
     is_active: true
+    input_schema:
+      type: "object"
+      properties:
+        value:
+          type: "string"
+          description: "Decimal value to convert."
+        from_unit:
+          type: "string"
+          description: "Source unit."
+        to_unit:
+          type: "string"
+          description: "Target unit."
+        precision:
+          type: "integer"
+          minimum: 1
+          maximum: 100
+          description: "Significant digits (default: 28)."
+      required: ["value", "from_unit", "to_unit"]
+      additionalProperties: false
+
   - name: "exact_unit_arithmetic"
     description: "Deterministic arithmetic with units."
     backend_url: "http://calculator:8000/mcp"
     risk_level: "low"
     required_roles: []
     is_active: true
+    input_schema:
+      type: "object"
+      properties:
+        operands:
+          type: "array"
+          items:
+            type: "object"
+            properties:
+              value:
+                type: "string"
+              unit:
+                type: "string"
+            required: ["value", "unit"]
+            additionalProperties: false
+          minItems: 1
+          description: "Values with units."
+        operator:
+          type: "string"
+          enum: ["add", "sub"]
+          description: "Operation for compatible units."
+        output_unit:
+          type: "string"
+          description: "Desired output unit."
+        precision:
+          type: "integer"
+          minimum: 1
+          maximum: 100
+          description: "Significant digits (default: 28)."
+      required: ["operands", "operator"]
+      additionalProperties: false
+
   - name: "document_generate"
     description: "Deterministic document generation for PDF/DOCX artifacts."
     backend_url: "http://document_generator:8000/mcp"
     risk_level: "low"
     required_roles: []
     is_active: true
+    input_schema:
+      type: "object"
+      properties:
+        content:
+          type: "string"
+          description: "Markdown content to convert."
+        format:
+          type: "string"
+          enum: ["pdf", "docx", "html"]
+          description: "Output document format."
+        title:
+          type: "string"
+          description: "Optional document title."
+      required: ["content", "format"]
+      additionalProperties: false

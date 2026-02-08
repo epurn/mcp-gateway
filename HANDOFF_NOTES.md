@@ -1,36 +1,78 @@
-# Handoff Notes
+# MCP Gateway Handoff Notes
 
-## Current Status
-- **Secure File Downloads**: Implemented and verified.
-  - Gateway serves files at `/files/{user_id}/{filename}`.
-  - Strict ownership enforced: User A cannot access User B's files.
-  - Files stored in `gateway_files` Docker volume.
-- **Document Generator Optimization**:
-  - Switched Dockerfile to use `pandoc/extra` (Alpine) base image.
-  - MASSIVE build speed improvement (5s vs 70s).
-- **Core Features**:
-  - MCP Transport (SSE/JSON-RPC) working.
-  - Authentication (JWT) working.
-  - Call Tool meta-tool working.
-- **Registry Sync**:
-  - `sync_tools_from_config` now deactivates tools missing from `config/tools.yaml` (history preserved) and clears cache after sync.
-  - Tool registry and policy updated to remove `git_readonly` and list the four calculator tools.
-- **Local Test/Cache Hygiene**:
-  - Pytest cache provider disabled to avoid permission issues (`-p no:cacheprovider`), temp dir pinned to `.pytest_tmp`.
-  - Coverage scripts use `python -m coverage` with a repo-local coverage file.
-  - Model cache lives in `model_cache/` and is wired via env vars in tests and docker compose.
+## Current Goal
+Fix MCP tool discovery in VS Code MCP flow.  
+Current behavior: gateway connects/authenticates, but `tools/list` returns zero tools.  
+Expected behavior: at least `find_tools` and `call_tool` are always discoverable.
 
-## Deployment Notes
-- The `gateway_files` volume permissions are automatically handled by the `init-files` service in `docker-compose.yml`. No manual intervention required.
+## What Is Working
+- VS Code MCP connection now uses local stdio bridge:
+  - `.vscode/mcp.json` runs `node scripts/mcp_http_bridge.js`
+- Bridge is stable for VS Code:
+  - newline-delimited JSON-RPC stdio input/output supported
+  - token auto-issued from dummy auth service (`jwt_issuer`)
+- Auth path is working (401 issue resolved).
+- Gateway SSE endpoint is reachable and handles `initialize`.
 
-## Next Steps
-1. **Sandbox Service**: Design and implement secure sandbox for running untrusted code (Calculator/Python tools).
-2. **Frontend**: Build a simple UI to test file generation and downloads.
-3. **Usage Tracking**: Enhance `audit` logs to track file download events.
+## Confirmed Problem
+- `tools/list` returns `{"tools":[]}`.
+- No tools shown to MCP client.
 
-## Key Commands
-- **Rebuild Services**: `docker compose -f docker/docker-compose.yml up -d --build`
-- **Verify Downloads**: `python scripts/verify_downloads.py`
-- **Check Logs**: `docker logs -f docker-gateway-1`
-- **Coverage (Windows)**: `. .\.venv\Scripts\Activate.ps1; .\scripts\run_tests_cov.ps1`
-- **Coverage (Unix)**: `./scripts/run_tests_cov.sh`
+## Most Likely Root Cause
+- `src/mcp_transport/service.py` defaults to `TOOL_FILTER_STRATEGY=minimal`.
+- `minimal` path returns only `get_core_tools(db)`.
+- `get_core_tools` (`src/registry/repository.py`) filters tools where categories overlap `["core"]`.
+- `sync_tools_from_config` (`src/registry/service.py`) does not assign categories, and `config/tools.yaml` does not include meta-tools (`find_tools`, `call_tool`).
+- Result: no rows match core filter, so empty tool list.
+
+## Constraints (Do Not Violate)
+- Keep gateway thin.
+- Keep v1 locked tool set unchanged (Git, Calculator, Document Generator as real tools).
+- Meta-tool pattern remains (`find_tools`, `call_tool`).
+- Prefer minimal diffs.
+- Rerun tests after changes.
+
+## Suggested Fix Direction
+1. Ensure `find_tools` and `call_tool` are always returned in `handle_tools_list` / `handle_tools_list_smart`, independent of DB core categories.
+2. Keep DB-backed tools for discovered real tools unchanged.
+3. Add tests to assert `tools/list` includes meta-tools even when registry has no `core` categories.
+4. Do not expand v1 real tool set.
+
+## Acceptance Criteria
+- In VS Code MCP, `tools/list` includes:
+  - `find_tools`
+  - `call_tool`
+- Existing auth and SSE flow still works.
+- Existing tests pass plus new/updated tests for tool listing behavior.
+
+## Known Good Commands
+- Run tests:
+  - `python -m pytest -p no:cacheprovider`
+- Start stack with auth test service:
+  - `docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml -f docker/docker-compose.auth-test.yml up -d`
+
+## New Context Starting Prompt (Copy/Paste)
+Use this exact prompt in a fresh context:
+
+```text
+Use HANDOFF_NOTES.md as authoritative context.
+
+Task: Fix MCP discovery so tools/list always exposes the two gateway meta-tools: find_tools and call_tool. Right now VS Code connects but sees zero tools.
+
+Constraints:
+- Keep architecture thin and aligned with AGENTS.md.
+- Do not expand v1 real tool set.
+- Keep changes minimal and security-safe.
+- Do not run end-to-end tool invocations yet unless I explicitly ask.
+
+Implementation requirements:
+1) Update the MCP tool-listing path so find_tools and call_tool are always present.
+2) Preserve existing DB-backed discovery behavior for real tools.
+3) Add/adjust tests to prevent regression.
+4) Run test suite at end.
+
+Then report:
+- Files changed
+- Why zero-tools happened
+- Exact behavior after fix
+```
