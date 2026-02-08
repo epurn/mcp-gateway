@@ -16,10 +16,10 @@ The application is functionally complete and has decent test coverage. However, 
 - **Recommendation**: Implement Redis-backed rate limiting.
 
 ### 3. Security (Secrets & Networking)
-- **Current**: `docker-compose.yml` uses default passwords and exposes the database port (5432) to the host.
-- **Risk**: Default credentials are a major security risk. Exposing the DB port makes it vulnerable if the host firewall isn't strict.
+- **Current**: Compose uses internal-only networks for DB/tools and does not publish tool/DB ports. Secrets are still supplied via `.env`.
+- **Risk**: Weak or default secrets can allow token forgery or tool impersonation. Without TLS, tokens are exposed in transit.
 - **Recommendation**: 
-  - Use `docker-compose.prod.yml` that does NOT expose DB ports.
+  - Rotate and strengthen all secrets (`JWT_SECRET_KEY`, `TOOL_GATEWAY_SHARED_SECRET`).
   - Load secrets from a secure manager or strictly controlled `.env` (not committed).
   - Enforce HTTPS/TLS (via reverse proxy like Nginx/Traefik).
 

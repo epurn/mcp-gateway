@@ -1,6 +1,9 @@
 """Tests for document generator request validation."""
 
+import os
 from fastapi.testclient import TestClient
+
+os.environ.setdefault("TOOL_GATEWAY_SHARED_SECRET", "test_gateway_secret")
 
 from tools.document_generator.app import app
 
@@ -8,7 +11,7 @@ from tools.document_generator.app import app
 client = TestClient(app)
 
 
-def _make_request(headers=None):
+def _make_request(headers=None, include_gateway_auth: bool = True):
     payload = {
         "jsonrpc": "2.0",
         "method": "tools/call",
@@ -21,7 +24,29 @@ def _make_request(headers=None):
         },
         "id": "1",
     }
-    return client.post("/mcp", json=payload, headers=headers or {})
+    request_headers = dict(headers or {})
+    if include_gateway_auth:
+        request_headers.setdefault(
+            "X-Gateway-Auth",
+            os.environ["TOOL_GATEWAY_SHARED_SECRET"],
+        )
+    return client.post("/mcp", json=payload, headers=request_headers)
+
+
+def test_missing_gateway_auth_header_returns_error():
+    response = _make_request(include_gateway_auth=False)
+    body = response.json()
+    assert response.status_code == 200
+    assert body["error"]["code"] == -32004
+    assert body["error"]["message"] == "Unauthorized gateway request"
+
+
+def test_invalid_gateway_auth_header_returns_error():
+    response = _make_request(headers={"X-Gateway-Auth": "wrong"})
+    body = response.json()
+    assert response.status_code == 200
+    assert body["error"]["code"] == -32004
+    assert body["error"]["message"] == "Unauthorized gateway request"
 
 
 def test_missing_user_id_header_returns_error():

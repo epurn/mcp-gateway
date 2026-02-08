@@ -38,6 +38,8 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 MAX_BODY_BYTES = int(os.getenv("MAX_BODY_BYTES", "16384"))
 MAX_LIST_ITEMS = int(os.getenv("MAX_LIST_ITEMS", "1000"))
+GATEWAY_AUTH_HEADER = "X-Gateway-Auth"
+GATEWAY_SHARED_SECRET = os.getenv("TOOL_GATEWAY_SHARED_SECRET", "")
 MAX_NUMBER_DIGITS = int(os.getenv("MAX_NUMBER_DIGITS", "200"))
 MAX_PRECISION = int(os.getenv("MAX_PRECISION", "100"))
 DEFAULT_PRECISION = int(os.getenv("DEFAULT_PRECISION", "28"))
@@ -655,6 +657,7 @@ class MCPErrorCodes:
     INVALID_PARAMS = -32602
     TOOL_NOT_FOUND = -32001
     BACKEND_TIMEOUT = -32003
+    UNAUTHORIZED = -32004
 
 
 app = FastAPI(title="Exact Computation Tool", version="1.0")
@@ -836,7 +839,7 @@ async def compute(request: ComputeRequest) -> ComputeResponse:
 
 
 @app.post("/mcp", response_model=MCPResponse)
-async def mcp_tool_call(request: MCPRequest) -> MCPResponse:
+async def mcp_tool_call(request: MCPRequest, fastapi_request: Request) -> MCPResponse:
     """Handle MCP tool invocations for multiple exact computation tools.
 
     Args:
@@ -845,6 +848,21 @@ async def mcp_tool_call(request: MCPRequest) -> MCPResponse:
     Returns:
         MCPResponse with result or error payload.
     """
+    if not GATEWAY_SHARED_SECRET:
+        return MCPResponse.error_response(
+            request_id=request.id,
+            code=MCPErrorCodes.UNAUTHORIZED,
+            message="Gateway authentication not configured",
+        )
+
+    gateway_auth = fastapi_request.headers.get(GATEWAY_AUTH_HEADER)
+    if gateway_auth != GATEWAY_SHARED_SECRET:
+        return MCPResponse.error_response(
+            request_id=request.id,
+            code=MCPErrorCodes.UNAUTHORIZED,
+            message="Unauthorized gateway request",
+        )
+
     if request.method != "tools/call":
         return MCPResponse.error_response(
             request_id=request.id,

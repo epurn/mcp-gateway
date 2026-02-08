@@ -94,6 +94,8 @@
     build:
       context: ../tools/calculator
     restart: unless-stopped
+    env_file:
+      - ../.env
     healthcheck:
       test:
         [

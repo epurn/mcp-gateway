@@ -5,6 +5,7 @@ from typing import Any
 
 import httpx
 
+from src.config import get_settings
 from .schemas import MCPRequest, MCPResponse, MCPErrorCodes
 from .exceptions import BackendTimeoutError, BackendUnavailableError, BackendError
 
@@ -41,10 +42,20 @@ async def forward_to_backend(
     """
     if request_id is None:
         request_id = str(uuid.uuid4())
+
+    settings = get_settings()
+    shared_secret = settings.TOOL_GATEWAY_SHARED_SECRET
+    if not shared_secret:
+        raise BackendError(
+            backend_url=backend_url,
+            status_code=500,
+            detail="Gateway shared secret not configured",
+        )
     
     headers = {
         "Content-Type": "application/json",
         "X-Request-ID": request_id,
+        "X-Gateway-Auth": shared_secret,
     }
     
     if user_id:

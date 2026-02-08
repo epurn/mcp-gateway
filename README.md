@@ -32,11 +32,11 @@ The Gateway sits between your Agents (Clients) and your MCP Servers (Backends):
 
 ```mermaid
 graph LR
-    Client[AI Agent] -->|Auth Token| Gateway[MCP Gateway]
+    Client[AI Agent] -->|JWT (iss/aud/exp)| Gateway[MCP Gateway]
     Gateway -->|Log| DB[(PostgreSQL)]
-    Gateway -->|Proxy| ToolA[Exact Compute MCP]
-    Gateway -->|Proxy| ToolB[Git Read-Only MCP]
-    Gateway -->|Proxy| ToolC[Document Generation MCP]
+    Gateway -->|MCP + X-Gateway-Auth + X-User-ID| ToolA[Calculator MCP]
+    Gateway -->|MCP + X-Gateway-Auth + X-User-ID| ToolB[Git Read-Only MCP]
+    Gateway -->|MCP + X-Gateway-Auth + X-User-ID| ToolC[Document Generation MCP]
 ```
 
 ## 🧰 v1 Tool Set
@@ -98,9 +98,14 @@ By default, `config/tools.yaml` uses Docker Compose service names. If you run to
 
 ### 1) Configure
 ```bash
-cp example.env .env
+cp .env.example .env
 ```
-Set `JWT_SECRET_KEY` and `JWT_ALGORITHM` to match your upstream auth system.
+Set `JWT_SECRET_KEY`, `JWT_ALGORITHM`, `JWT_ALLOWED_ALGORITHMS`, `JWT_ISSUER`, and `JWT_AUDIENCE` to match your upstream auth system. Set `JWT_MAX_TOKEN_AGE_MINUTES` (0 disables) and `JWT_CLOCK_SKEW_SECONDS` to enforce token freshness. Set `TOOL_GATEWAY_SHARED_SECRET` to a strong value for tool authentication.
+
+If your upstream JWT uses non-standard claim names, configure:
+`JWT_USER_ID_CLAIM`, `JWT_EXP_CLAIM`, `JWT_IAT_CLAIM`, `JWT_TENANT_CLAIM`, `JWT_API_VERSION_CLAIM`, and optional `JWT_ALLOWED_API_VERSIONS`. If your tokens do not include `iat`, set `JWT_MAX_TOKEN_AGE_MINUTES=0`.
+
+For local development, you can copy `.env.example` to `.env.development` and use the dev compose override; `.env.development` is ignored by git.
 
 ### 2) Build and Start (Locked Networking)
 ```bash
@@ -120,6 +125,28 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
 This publishes database and tool ports for local debugging while keeping the internal network in place.
 
+### 3b) Optional: Start Dummy JWT Issuer (Near-Prod Auth Testing)
+```bash
+docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml -f docker/docker-compose.auth-test.yml up -d --build
+```
+This adds `jwt_issuer` on `http://localhost:8010` for end-to-end JWT flow testing.
+If `JWT_ISSUER_ADMIN_TOKEN` is set, include `X-Issuer-Token` when requesting tokens.
+
+Issue a token (PowerShell):
+```powershell
+$body = @{
+  user_id = "demo"
+  roles = @("developer")
+  workspace = "demo"
+  api_version = "1.1"
+  expires_in_seconds = 3600
+} | ConvertTo-Json
+
+$headers = @{ "X-Issuer-Token" = "dev_issuer_admin_token" }
+$token = (Invoke-RestMethod -Method Post -Uri "http://localhost:8010/token" -Headers $headers -ContentType "application/json" -Body $body).access_token
+$token
+```
+
 ### 4) Invoke a Tool (Example)
 Generate a test JWT (development only):
 ```bash
@@ -136,55 +163,87 @@ curl -sS -X POST "http://localhost:8000/mcp/invoke" \
 ```
 
 ### 5) Connect via Antigravity (or other MCP Clients)
-Since Antigravity requires stdio-based communication, use `mcp-bridge` to connect to the Gateway's SSE endpoint.
+Use the repo bridge script to connect a stdio MCP client to the Gateway SSE endpoint. The bridge auto-issues a short-lived JWT from the dummy issuer.
 
 **Config:**
 ```json
 {
   "mcpServers": {
     "gateway": {
-      "command": "npx",
+      "command": "node",
       "args": [
-        "-y",
-        "@nimbletools/mcp-http-bridge",
+        "scripts/mcp_http_bridge.js",
         "--endpoint",
         "http://localhost:8000/sse",
-        "--token",
-        "YOUR_JWT_TOKEN_HERE"
+        "--issuer-url",
+        "http://localhost:8010/token",
+        "--user-id",
+        "demo",
+        "--roles",
+        "developer",
+        "--workspace",
+        "demo"
       ]
     }
   }
 }
 ```
-*Note: Ensure your JWT token is valid and the `src` volume is mounted in Docker for development.*
+*Note: schema keys differ by client; VS Code uses `servers` (see below).*
+
+### VS Code / Continue Example
+Use the workspace `.vscode/mcp.json` format:
+```json
+{
+  "servers": {
+    "gateway": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "scripts/mcp_http_bridge.js",
+        "--endpoint",
+        "http://localhost:8000/sse",
+        "--issuer-url",
+        "http://localhost:8010/token",
+        "--user-id",
+        "demo",
+        "--roles",
+        "developer",
+        "--workspace",
+        "demo"
+      ]
+    }
+  }
+}
+```
 
 ### 6) Test with a Real LLM (MCP Client)
 Use any MCP-compatible client (e.g., Claude Desktop, Continue, or your own MCP client) that supports stdio-based MCP servers.
 
 1. Start the gateway and tools (Docker Compose).
-2. Generate a JWT (dev only):
-   ```bash
-   python -c "from src.auth.utils import create_test_jwt; print(create_test_jwt(user_id='demo', roles=['developer']))"
-   ```
-3. Configure your MCP client to run the HTTP bridge as the MCP server:
+2. Configure your MCP client to run the repo bridge as the MCP server:
    ```json
    {
      "mcpServers": {
        "gateway": {
-         "command": "npx",
+         "command": "node",
          "args": [
-           "-y",
-           "@nimbletools/mcp-http-bridge",
+           "scripts/mcp_http_bridge.js",
            "--endpoint",
            "http://localhost:8000/sse",
-           "--token",
-           "YOUR_JWT_TOKEN_HERE"
+           "--issuer-url",
+           "http://localhost:8010/token",
+           "--user-id",
+           "demo",
+           "--roles",
+           "developer",
+           "--workspace",
+           "demo"
          ]
        }
      }
    }
    ```
-4. Prompt your LLM:
+3. Prompt your LLM:
    - “Find tools to generate a PDF report.”
    - “Call document_generate with a short Markdown report.”
 
@@ -196,9 +255,9 @@ Use any MCP-compatible client (e.g., Claude Desktop, Continue, or your own MCP c
 
 ### 1) Configure
 ```bash
-cp example.env .env
+cp .env.example .env
 ```
-Update `DATABASE_URL` to point at your local Postgres (for example `localhost:5432`), and set `JWT_SECRET_KEY`/`JWT_ALGORITHM`.
+Update `DATABASE_URL` to point at your local Postgres (for example `localhost:5432`), and set `JWT_SECRET_KEY`/`JWT_ALGORITHM`/`JWT_ALLOWED_ALGORITHMS`/`JWT_ISSUER`/`JWT_AUDIENCE`/`JWT_MAX_TOKEN_AGE_MINUTES`/`JWT_CLOCK_SKEW_SECONDS`/`TOOL_GATEWAY_SHARED_SECRET` plus any claim-mapping settings. For local dev, prefer `.env.development` (ignored by git) with `docker-compose.dev.yml`.
 
 If the gateway runs on the host, update `config/tools.yaml` to point at `http://localhost:8091/mcp` (and future tool ports) or mount a host-specific config file.
 
@@ -211,7 +270,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db calculat
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # or .venv\Scripts\activate on Windows
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 
 alembic upgrade head
 uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
@@ -227,7 +286,7 @@ uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 2. Run Postgres externally and point `DATABASE_URL` to it.
 3. Run the gateway with production env:
    - `DEBUG=False`
-   - `JWT_SECRET_KEY` and `JWT_ALGORITHM` set to production values
+   - `JWT_SECRET_KEY`, `JWT_ALGORITHM`, `JWT_ALLOWED_ALGORITHMS`, `JWT_ISSUER`, `JWT_AUDIENCE`, `JWT_MAX_TOKEN_AGE_MINUTES`, `JWT_CLOCK_SKEW_SECONDS`, and `TOOL_GATEWAY_SHARED_SECRET` set to production values
    - `DATABASE_URL` set to your production database
 4. Mount `config/tools.yaml` and `config/policy.yaml` as read-only in the container.
 5. Run `alembic upgrade head` during deploys to apply schema changes.
@@ -244,5 +303,6 @@ uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 ## 🧪 Testing
 Run the test suite with coverage reporting:
 ```bash
+pip install -r requirements-dev.txt
 pytest --cov=src
 ```

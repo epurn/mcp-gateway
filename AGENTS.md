@@ -136,6 +136,16 @@ No additional tools may be added in v1.
 
 ---
 
+## MCP Client Integration Rules (v1 Dev)
+
+- Prefer `node scripts/mcp_http_bridge.js` for stdio MCP client integration in this repo
+- For VS Code workspace config, use `.vscode/mcp.json` with top-level `servers` (not `mcpServers`)
+- Prefer bridge args that auto-issue dev JWTs from `http://localhost:8010/token`; do not hardcode long-lived tokens in docs
+- Treat `docker/docker-compose.auth-test.yml` + `services/jwt_issuer` as development-only auth test infrastructure
+- Remove temporary debug/test helpers after validation unless they provide clear ongoing value
+
+---
+
 ## If Unsure
 
 When in doubt, prefer:

@@ -3,6 +3,10 @@ services:
     env_file:
       - ../.env.development
 
+  calculator:
+    env_file:
+      - ../.env.development
+
   gateway:
     env_file:
       - ../.env.development

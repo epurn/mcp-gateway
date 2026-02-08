@@ -8,7 +8,7 @@ Deterministic document generation service using Pandoc. Converts Markdown to PDF
 - **Markdown Input**: Write content in Markdown with full formatting support
 - **Deterministic Output**: Same input always produces the same output
 - **MCP Integration**: Exposes standard MCP JSON-RPC 2.0 endpoint
-- **Security**: Runs as non-root user with resource limits
+- **Security**: Runs as non-root user with resource limits and gateway-only auth
 
 ## API
 
@@ -23,6 +23,8 @@ Returns `{"status": "ok"}`
 ```bash
 POST /mcp
 ```
+
+Requires `X-Gateway-Auth` header matching `TOOL_GATEWAY_SHARED_SECRET` and `X-User-ID` from the gateway.
 
 **Request** (JSON-RPC 2.0):
 ```json
@@ -48,8 +50,9 @@ POST /mcp
   "id": "req-1",
   "result": {
     "format": "pdf",
+    "filename": "generated.pdf",
     "size_bytes": 12345,
-    "content": "base64-encoded-document..."
+    "download_url": "http://gateway/files/user-id/generated.pdf"
   }
 }
 ```
@@ -59,6 +62,8 @@ POST /mcp
 Environment variables:
 - `MAX_CONTENT_SIZE`: Maximum input size in bytes (default: 524288 = 512KB)
 - `REQUEST_TIMEOUT_SEC`: Pandoc execution timeout (default: 30 seconds)
+- `GATEWAY_PUBLIC_URL`: Base URL for download links (default: `http://localhost:8000`)
+- `TOOL_GATEWAY_SHARED_SECRET`: Required shared secret for gateway auth
 
 ## Supported Formats
 

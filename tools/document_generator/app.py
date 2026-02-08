@@ -17,6 +17,8 @@ from starlette.responses import JSONResponse
 MAX_CONTENT_SIZE = int(os.getenv("MAX_CONTENT_SIZE", "524288"))  # 512KB
 REQUEST_TIMEOUT_SEC = int(os.getenv("REQUEST_TIMEOUT_SEC", "30"))
 USER_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$")
+GATEWAY_AUTH_HEADER = "X-Gateway-Auth"
+GATEWAY_SHARED_SECRET = os.getenv("TOOL_GATEWAY_SHARED_SECRET", "")
 
 # Emoji pattern for stripping (covers most emoji ranges)
 EMOJI_PATTERN = re.compile(
@@ -112,6 +114,7 @@ class MCPErrorCodes:
     INVALID_PARAMS = -32602
     TOOL_NOT_FOUND = -32001
     GENERATION_FAILED = -32002
+    UNAUTHORIZED = -32004
 
 
 @app.get("/health")
@@ -171,6 +174,21 @@ async def mcp_tool_call(request: MCPRequest, fastapi_request: Request) -> MCPRes
         )
 
     try:
+        if not GATEWAY_SHARED_SECRET:
+            return MCPResponse.error_response(
+                request_id=request.id,
+                code=MCPErrorCodes.UNAUTHORIZED,
+                message="Gateway authentication not configured",
+            )
+
+        gateway_auth = fastapi_request.headers.get(GATEWAY_AUTH_HEADER)
+        if gateway_auth != GATEWAY_SHARED_SECRET:
+            return MCPResponse.error_response(
+                request_id=request.id,
+                code=MCPErrorCodes.UNAUTHORIZED,
+                message="Unauthorized gateway request",
+            )
+
         # Validate parameters
         params = GenerateParams(**request.params.arguments)
         

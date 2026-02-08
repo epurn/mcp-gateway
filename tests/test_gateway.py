@@ -23,6 +23,7 @@ from src.gateway.service import validate_payload_size, invoke_tool
 from src.gateway.proxy import forward_to_backend, forward_tool_call
 from src.auth.models import AuthenticatedUser, UserClaims
 from src.registry.models import Tool, RiskLevel
+from src.config import get_settings
 
 
 class TestMCPSchemas:
@@ -197,6 +198,26 @@ class TestProxyClient:
         
         assert response.result == {"data": "success"}
         assert response.id == "test-123"
+
+        settings = get_settings()
+        _, kwargs = mock_client.post.call_args
+        assert kwargs["headers"]["X-Gateway-Auth"] == settings.TOOL_GATEWAY_SHARED_SECRET
+
+    @pytest.mark.asyncio
+    async def test_forward_missing_gateway_secret_raises(self, mcp_request, monkeypatch):
+        """Test missing shared secret fails closed."""
+        monkeypatch.setenv("TOOL_GATEWAY_SHARED_SECRET", "")
+        get_settings.cache_clear()
+        try:
+            mock_client = AsyncMock()
+            with pytest.raises(BackendError):
+                await forward_to_backend(
+                    client=mock_client,
+                    backend_url="http://backend:8000",
+                    mcp_request=mcp_request
+                )
+        finally:
+            get_settings.cache_clear()
 
 
 class TestInvokeToolService:

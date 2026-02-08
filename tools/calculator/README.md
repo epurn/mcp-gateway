@@ -1,7 +1,7 @@
 # Exact Computation / Calculator Tool (v1)
 
 Minimal, deterministic HTTP service for high-precision arithmetic, statistics,
-and unit-safe calculations. Stateless, no auth, no network calls.
+and unit-safe calculations. Stateless, gateway-authenticated, no network calls.
 
 ## HTTP API
 
@@ -14,7 +14,9 @@ Response:
 ### `POST /mcp`
 MCP JSON-RPC tool call endpoint.
 
-Tool name: `exact_compute`
+Requires `X-Gateway-Auth` header matching `TOOL_GATEWAY_SHARED_SECRET`.
+
+Tool names: `exact_calculate`, `exact_statistics`, `exact_convert_units`, `exact_unit_arithmetic`
 
 Request example:
 ```json
@@ -23,7 +25,7 @@ Request example:
   "id": "req-1",
   "method": "tools/call",
   "params": {
-    "name": "exact_compute",
+    "name": "exact_calculate",
     "arguments": {
       "operation": "arithmetic",
       "params": {
@@ -146,3 +148,4 @@ is provided (for example `m^2` or `m*s^-1`).
 - `DEFAULT_PRECISION=28`
 - `REQUEST_TIMEOUT_MS=250`
 - `MAX_OUTPUT_CHARS=4096`
+- `TOOL_GATEWAY_SHARED_SECRET` (required)

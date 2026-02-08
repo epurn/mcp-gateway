@@ -1,0 +1,28 @@
+services:
+  jwt_issuer:
+    build:
+      context: ../services/jwt_issuer
+    restart: unless-stopped
+    env_file:
+      - ../.env.development
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3).read()",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    ports:
+      - "8010:8000"
+    networks:
+      - mcp-public
+      - mcp-internal
+
+networks:
+  mcp-public:
+  mcp-internal:

@@ -36,14 +36,19 @@ Check your MCP config to see what tools Antigravity sees:
 {
   "mcpServers": {
     "gateway": {
-      "command": "npx",
+      "command": "node",
       "args": [
-        "-y",
-        "@nimbletools/mcp-http-bridge",
+        "scripts/mcp_http_bridge.js",
         "--endpoint",
         "http://localhost:8000/sse",
-        "--token",
-        "YOUR_JWT_HERE"
+        "--issuer-url",
+        "http://localhost:8010/token",
+        "--user-id",
+        "demo",
+        "--roles",
+        "developer",
+        "--workspace",
+        "demo"
       ]
     }
   }
@@ -62,14 +67,19 @@ Check your MCP config to see what tools Antigravity sees:
 {
   "mcpServers": {
     "mcp-gateway": {
-      "command": "npx",
+      "command": "node",
       "args": [
-        "-y",
-        "@nimbletools/mcp-http-bridge",
+        "scripts/mcp_http_bridge.js",
         "--endpoint",
         "http://localhost:8000/sse",
-        "--token",
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkZXZlbG9wZXIiLCJyb2xlcyI6WyJkZXZlbG9wZXIiXSwiYWxsb3dlZF90b29scyI6WyIqIl0sImV4cCI6MTgwMTc1ODMyMSwiaWF0IjoxNzcwMjIyMzIxfQ.fewNla9MQSy8ijjAfrvLplgx3XukRqKm-tbHSdRwak4"
+        "--issuer-url",
+        "http://localhost:8010/token",
+        "--user-id",
+        "demo",
+        "--roles",
+        "developer",
+        "--workspace",
+        "demo"
       ]
     }
   }
@@ -93,19 +103,25 @@ Check your MCP config to see what tools Antigravity sees:
 
 ```json
 {
-  "mcpServers": [
-    {
-      "command": "npx",
+  "servers": {
+    "gateway": {
+      "type": "stdio",
+      "command": "node",
       "args": [
-        "-y",
-        "@nimbletools/mcp-http-bridge",
+        "scripts/mcp_http_bridge.js",
         "--endpoint",
         "http://localhost:8000/sse",
-        "--token",
-        "YOUR_JWT_HERE"
+        "--issuer-url",
+        "http://localhost:8010/token",
+        "--user-id",
+        "demo",
+        "--roles",
+        "developer",
+        "--workspace",
+        "demo"
       ]
     }
-  ]
+  }
 }
 ```
 
@@ -114,8 +130,12 @@ Check your MCP config to see what tools Antigravity sees:
 ### Test Tool Discovery
 
 ```bash
-# Get JWT token
-TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkZXZlbG9wZXIiLCJyb2xlcyI6WyJkZXZlbG9wZXIiXSwiYWxsb3dlZF90b29scyI6WyIqIl0sImV4cCI6MTgwMTc1ODMyMSwiaWF0IjoxNzcwMjIyMzIxfQ.fewNla9MQSy8ijjAfrvLplgx3XukRqKm-tbHSdRwak4"
+# Get JWT token from dummy issuer (dev only), then paste the access_token:
+# curl -sS -X POST http://localhost:8010/token \
+#   -H "X-Issuer-Token: dev_issuer_admin_token" \
+#   -H "Content-Type: application/json" \
+#   -d '{"user_id":"demo","roles":["developer"],"workspace":"demo","api_version":"1.1","expires_in_seconds":900}'
+TOKEN="PASTE_ACCESS_TOKEN_HERE"
 
 # Test with document-related context
 curl -X POST http://localhost:8000/sse \
