@@ -3,6 +3,7 @@
 import time
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
+from uuid import uuid4
 
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +32,7 @@ class AuditContext:
         request_id: str,
         user_id: str,
         tool_name: str,
+        endpoint_path: str = "/unknown",
     ) -> None:
         """Initialize audit context.
         
@@ -38,10 +40,12 @@ class AuditContext:
             request_id: Correlation ID for tracing.
             user_id: Who is invoking the tool.
             tool_name: Which tool is being invoked.
+            endpoint_path: API endpoint path used for invocation.
         """
         self.request_id = request_id
         self.user_id = user_id
         self.tool_name = tool_name
+        self.endpoint_path = endpoint_path
         self.start_time = time.perf_counter()
         self.status = AuditStatus.success
         self.error_code: str | None = None
@@ -89,6 +93,7 @@ async def log_tool_invocation(
         request_id=context.request_id,
         user_id=context.user_id,
         tool_name=context.tool_name,
+        endpoint_path=context.endpoint_path,
         status=context.status,
         duration_ms=context.duration_ms,
         error_code=context.error_code,
@@ -103,6 +108,7 @@ async def log_tool_invocation(
         request_id=context.request_id,
         user_id=context.user_id,
         tool_name=context.tool_name,
+        endpoint_path=context.endpoint_path,
         status=context.status.value,
         duration_ms=context.duration_ms,
         error_code=context.error_code,
@@ -115,6 +121,7 @@ async def audit_tool_invocation(
     request_id: str,
     user_id: str,
     tool_name: str,
+    endpoint_path: str = "/unknown",
 ) -> AsyncGenerator[AuditContext, None]:
     """Context manager for auditing tool invocations.
     
@@ -125,6 +132,7 @@ async def audit_tool_invocation(
         request_id: Correlation ID for tracing.
         user_id: Who is invoking the tool.
         tool_name: Which tool is being invoked.
+        endpoint_path: API endpoint path used for invocation.
         
     Yields:
         AuditContext for marking status/errors.
@@ -137,8 +145,26 @@ async def audit_tool_invocation(
                 ctx.mark_timeout()
                 raise
     """
-    context = AuditContext(request_id, user_id, tool_name)
+    context = AuditContext(request_id, user_id, tool_name, endpoint_path=endpoint_path)
     try:
         yield context
     finally:
         await log_tool_invocation(db, context)
+
+
+async def log_denied_tool_invocation(
+    db: AsyncSession,
+    user_id: str,
+    tool_name: str,
+    endpoint_path: str,
+    error_code: str,
+) -> None:
+    """Log denied tool invocations that fail before normal gateway invocation flow."""
+    context = AuditContext(
+        request_id=str(uuid4()),
+        user_id=user_id,
+        tool_name=tool_name,
+        endpoint_path=endpoint_path,
+    )
+    context.mark_error(error_code)
+    await log_tool_invocation(db, context)

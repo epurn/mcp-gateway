@@ -22,7 +22,7 @@ from src.gateway.exceptions import (
 from src.gateway.service import validate_payload_size, invoke_tool
 from src.gateway.proxy import forward_to_backend, forward_tool_call
 from src.auth.models import AuthenticatedUser, UserClaims
-from src.registry.models import Tool, RiskLevel
+from src.registry.models import Tool, RiskLevel, ToolScope
 from src.config import get_settings
 
 
@@ -243,6 +243,7 @@ class TestInvokeToolService:
             name="read_file",
             description="Read file",
             backend_url="http://backend:8000",
+            scope=ToolScope.calculator,
             risk_level=RiskLevel.low,
             is_active=True,
             required_roles=None
@@ -355,4 +356,40 @@ class TestInvokeAuditLogging:
                 await invoke_tool(db, user, request, client)
                 
             ctx_instance.mark_error.assert_called_with("TOOL_NOT_FOUND")
+
+    @pytest.mark.asyncio
+    async def test_invoke_tool_passes_endpoint_path_to_audit_context(self, mock_deps):
+        db, user, request, client = mock_deps
+        request.tool_name = "tool"
+        request.arguments = {}
+
+        with patch("src.gateway.service.audit_tool_invocation") as mock_audit_ctx, \
+             patch("src.gateway.service.get_all_tools_cached") as mock_get_tools:
+            ctx_instance = AsyncMock()
+            mock_audit_ctx.return_value.__aenter__.return_value = ctx_instance
+
+            tool = MagicMock()
+            tool.name = "tool"
+            tool.id = 1
+            tool.backend_url = "http://ok"
+            tool.required_roles = None
+            mock_get_tools.return_value = [tool]
+
+            mock_response = MagicMock()
+            mock_response.error = None
+            mock_response.tool_id = None
+            mock_response.result = {"ok": True}
+
+            with patch("src.gateway.service.forward_tool_call", new_callable=AsyncMock) as mock_forward:
+                mock_forward.return_value = mock_response
+                await invoke_tool(
+                    db=db,
+                    user=user,
+                    request=request,
+                    client=client,
+                    endpoint_path="/calculator/sse",
+                )
+
+            _, kwargs = mock_audit_ctx.call_args
+            assert kwargs["endpoint_path"] == "/calculator/sse"
 

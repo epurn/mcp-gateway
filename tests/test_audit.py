@@ -38,12 +38,14 @@ class TestAuditLogCreate:
             request_id="abc-123",
             user_id="user@example.com",
             tool_name="read_file",
+            endpoint_path="/calculator/sse",
             status=AuditStatus.success,
             duration_ms=150,
         )
         assert log.request_id == "abc-123"
         assert log.user_id == "user@example.com"
         assert log.tool_name == "read_file"
+        assert log.endpoint_path == "/calculator/sse"
         assert log.status == AuditStatus.success
         assert log.duration_ms == 150
         assert log.error_code is None
@@ -54,6 +56,7 @@ class TestAuditLogCreate:
             request_id="abc-123",
             user_id="user@example.com",
             tool_name="read_file",
+            endpoint_path="/calculator/sse",
             status=AuditStatus.error,
             duration_ms=50,
             error_code="TOOL_NOT_FOUND",
@@ -67,6 +70,7 @@ class TestAuditLogCreate:
                 request_id="abc-123",
                 user_id="user@example.com",
                 tool_name="read_file",
+                endpoint_path="/calculator/sse",
                 status=AuditStatus.success,
                 duration_ms=-1,
             )
@@ -80,6 +84,7 @@ class TestAuditLogQuery:
         query = AuditLogQuery()
         assert query.user_id is None
         assert query.tool_name is None
+        assert query.endpoint_path is None
         assert query.status is None
         assert query.limit == 100
         assert query.offset == 0
@@ -90,6 +95,7 @@ class TestAuditLogQuery:
         query = AuditLogQuery(
             user_id="admin@example.com",
             tool_name="delete_file",
+            endpoint_path="/docs/sse",
             status=AuditStatus.error,
             start_time=now,
             limit=50,
@@ -97,6 +103,7 @@ class TestAuditLogQuery:
         )
         assert query.user_id == "admin@example.com"
         assert query.tool_name == "delete_file"
+        assert query.endpoint_path == "/docs/sse"
         assert query.status == AuditStatus.error
         assert query.limit == 50
         assert query.offset == 10
@@ -123,6 +130,7 @@ class TestAuditContext:
         assert ctx.request_id == "req-123"
         assert ctx.user_id == "user@example.com"
         assert ctx.tool_name == "read_file"
+        assert ctx.endpoint_path == "/unknown"
         assert ctx.status == AuditStatus.success
         assert ctx.error_code is None
     
@@ -204,6 +212,7 @@ class TestLogToolInvocation:
             assert log_data.request_id == "req-123"
             assert log_data.user_id == "user@example.com"
             assert log_data.tool_name == "read_file"
+            assert log_data.endpoint_path == "/unknown"
             assert log_data.status == AuditStatus.success
     
     @pytest.mark.asyncio
@@ -239,6 +248,7 @@ class TestAuditLogResponse:
         mock_log.request_id = "req-123"
         mock_log.user_id = "user@example.com"
         mock_log.tool_name = "read_file"
+        mock_log.endpoint_path = "/calculator/sse"
         mock_log.status = AuditStatus.success
         mock_log.duration_ms = 150
         mock_log.error_code = None
