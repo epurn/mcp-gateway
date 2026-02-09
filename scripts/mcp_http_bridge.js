@@ -345,7 +345,7 @@ async function main() {
 
   endpoint =
     getArg("--endpoint") ||
-    resolveSetting("MCP_GATEWAY_SSE_ENDPOINT", devEnv, prodEnv, "http://localhost:8000/sse");
+    resolveSetting("MCP_GATEWAY_SSE_ENDPOINT", devEnv, prodEnv, "http://localhost:8000/calculator/sse");
   if (!endpoint) {
     throw new Error("Missing --endpoint and MCP_GATEWAY_SSE_ENDPOINT");
   }

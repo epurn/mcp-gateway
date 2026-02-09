@@ -1,16 +1,19 @@
 """Service layer for tool registry with caching."""
 
-import asyncio
-from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from cachetools import TTLCache
 
 from src.auth.models import AuthenticatedUser
-from src.auth.policy import check_tool_permission
 
-from .models import RiskLevel, Tool
-from .repository import get_all_active_tools, get_tool_by_name, create_tool, deactivate_tools_not_in_list
+from .models import RiskLevel, Tool, ToolScope
+from .repository import (
+    get_all_active_tools,
+    get_active_tools_by_scope,
+    get_tool_by_name,
+    create_tool,
+    deactivate_tools_not_in_list,
+)
 from .config import load_tool_registry
 from .schemas import ToolResponse, ToolListResponse
 
@@ -52,6 +55,7 @@ async def sync_tools_from_config(db: "AsyncSession", config_path: str | None = N
                 name=tool.name,
                 description=tool.description,
                 backend_url=tool.backend_url,
+                scope=tool.scope,
                 risk_level=tool.risk_level,
                 required_roles=tool.required_roles or None,
                 is_active=tool.is_active,
@@ -65,6 +69,9 @@ async def sync_tools_from_config(db: "AsyncSession", config_path: str | None = N
             updated = True
         if existing.backend_url != tool.backend_url:
             existing.backend_url = tool.backend_url
+            updated = True
+        if existing.scope.value != tool.scope:
+            existing.scope = ToolScope(tool.scope)
             updated = True
         if existing.risk_level.value != tool.risk_level:
             existing.risk_level = RiskLevel(tool.risk_level)
@@ -105,6 +112,18 @@ async def get_all_tools_cached(db: "AsyncSession") -> list[Tool]:
         return _tool_cache[cache_key]
     
     tools = await get_all_active_tools(db)
+    _tool_cache[cache_key] = tools
+    return tools
+
+
+async def get_tools_by_scope_cached(db: "AsyncSession", scope: str) -> list[Tool]:
+    """Get active tools for a scope with cache support."""
+    cache_key = f"active_tools_scope:{scope}"
+
+    if cache_key in _tool_cache:
+        return _tool_cache[cache_key]
+
+    tools = await get_active_tools_by_scope(db, scope)
     _tool_cache[cache_key] = tools
     return tools
 

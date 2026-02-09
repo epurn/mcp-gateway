@@ -1,162 +1,142 @@
-"""Tests for MCP transport service tool listing behavior."""
+"""Tests for scoped MCP transport service behavior."""
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from src.auth.exceptions import ToolNotAllowedError
 from src.auth.models import AuthenticatedUser, UserClaims
-from src.mcp_transport.service import handle_find_tools, handle_tools_list_smart
-from src.registry.schemas import ToolListResponse, ToolResponse
+from src.mcp_transport.service import handle_tools_call, handle_tools_list
 
 
-def _user() -> AuthenticatedUser:
+def _user_all() -> AuthenticatedUser:
     return AuthenticatedUser(
-        claims=UserClaims(user_id="user-1", roles=["analyst"]),
+        claims=UserClaims(user_id="user-1", roles=["developer"]),
         allowed_tools={"*"},
     )
 
 
-def _limited_user() -> AuthenticatedUser:
+def _user_limited() -> AuthenticatedUser:
     return AuthenticatedUser(
-        claims=UserClaims(user_id="user-2", roles=["analyst"]),
+        claims=UserClaims(user_id="user-2", roles=["viewer"]),
         allowed_tools={"exact_calculate"},
     )
 
 
 @pytest.mark.asyncio
-async def test_tools_list_minimal_includes_meta_tools_when_registry_core_is_empty():
+async def test_tools_list_is_scoped_and_permission_filtered():
     db = AsyncMock()
+    tools = [
+        SimpleNamespace(
+            name="exact_calculate",
+            description="Calc",
+            input_schema={"type": "object"},
+            required_roles=None,
+        ),
+        SimpleNamespace(
+            name="exact_statistics",
+            description="Stats",
+            input_schema={"type": "object"},
+            required_roles=["admin"],
+        ),
+        SimpleNamespace(
+            name="find_tools",
+            description="Legacy meta tool",
+            input_schema={"type": "object"},
+            required_roles=None,
+        ),
+    ]
 
-    with patch("src.mcp_transport.service.get_core_tools", new_callable=AsyncMock) as mock_get_core_tools:
-        mock_get_core_tools.return_value = []
-        result = await handle_tools_list_smart(db=db, user=_user(), strategy="minimal")
+    with patch("src.mcp_transport.service.get_tools_by_scope_cached", new_callable=AsyncMock) as mock_scoped_tools:
+        mock_scoped_tools.return_value = tools
+        result = await handle_tools_list(db=db, user=_user_limited(), scope="calculator")
 
     names = [tool.name for tool in result.tools]
-    assert names == ["find_tools", "call_tool"]
+    assert names == ["exact_calculate"]
 
 
 @pytest.mark.asyncio
-async def test_tools_list_minimal_keeps_meta_tools_authoritative_when_names_collide():
+async def test_tools_call_outside_scope_raises_tool_not_allowed():
     db = AsyncMock()
-    duplicate_db_tool = SimpleNamespace(
-        name="call_tool",
-        description="DB-defined duplicate",
-        input_schema={"type": "object", "properties": {"unexpected": {"type": "string"}}},
+    client = AsyncMock()
+    scoped_mismatch_tool = SimpleNamespace(
+        name="document_generate",
+        scope=SimpleNamespace(value="docs"),
     )
 
-    with patch("src.mcp_transport.service.get_core_tools", new_callable=AsyncMock) as mock_get_core_tools:
-        mock_get_core_tools.return_value = [duplicate_db_tool]
-        result = await handle_tools_list_smart(db=db, user=_user(), strategy="minimal")
-
-    names = [tool.name for tool in result.tools]
-    assert names.count("call_tool") == 1
-
-    call_tool = next(tool for tool in result.tools if tool.name == "call_tool")
-    assert "name" in call_tool.inputSchema["properties"]
-    assert "unexpected" not in call_tool.inputSchema["properties"]
+    with patch("src.mcp_transport.service.get_all_tools_cached", new_callable=AsyncMock) as mock_all_tools:
+        with patch("src.mcp_transport.service.log_denied_tool_invocation", new_callable=AsyncMock):
+            mock_all_tools.return_value = [scoped_mismatch_tool]
+            with pytest.raises(ToolNotAllowedError):
+                await handle_tools_call(
+                    db=db,
+                    user=_user_all(),
+                    client=client,
+                    scope="calculator",
+                    name="document_generate",
+                    arguments={"content": "x", "format": "pdf"},
+                )
 
 
 @pytest.mark.asyncio
-async def test_tools_list_all_preserves_db_discovery_and_adds_meta_tools():
+async def test_tools_call_not_found_logs_denied_reason():
     db = AsyncMock()
-    user_tools = ToolListResponse(
-        tools=[
-            ToolResponse(
-                name="exact_calculate",
-                description="Deterministic high-precision arithmetic calculations.",
-                backend_url="http://calculator:8000/mcp",
-                risk_level="low",
+    client = AsyncMock()
+
+    with patch("src.mcp_transport.service.get_all_tools_cached", new_callable=AsyncMock) as mock_all_tools:
+        with patch("src.mcp_transport.service.log_denied_tool_invocation", new_callable=AsyncMock) as mock_log_denied:
+            mock_all_tools.return_value = []
+            result = await handle_tools_call(
+                db=db,
+                user=_user_all(),
+                client=client,
+                scope="calculator",
+                name="missing_tool",
+                arguments={},
+                endpoint_path="/calculator/sse",
             )
-        ],
-        count=1,
+
+    assert result.isError is True
+    assert "not found" in result.content[0].text
+    mock_log_denied.assert_awaited_once_with(
+        db=db,
+        user_id="user-1",
+        tool_name="missing_tool",
+        endpoint_path="/calculator/sse",
+        error_code="TOOL_NOT_FOUND",
     )
 
-    with patch("src.mcp_transport.service.get_core_tools", new_callable=AsyncMock) as mock_get_core_tools:
-        with patch("src.mcp_transport.service.get_tools_for_user", new_callable=AsyncMock) as mock_get_tools_for_user:
-            mock_get_core_tools.return_value = []
-            mock_get_tools_for_user.return_value = user_tools
-
-            result = await handle_tools_list_smart(db=db, user=_user(), strategy="all")
-
-    names = [tool.name for tool in result.tools]
-    assert names[:2] == ["find_tools", "call_tool"]
-    assert "exact_calculate" in names
-    assert len(names) == 3
-
 
 @pytest.mark.asyncio
-async def test_find_tools_falls_back_to_keyword_match_when_semantic_search_is_empty():
+async def test_tools_call_in_scope_invokes_gateway():
     db = AsyncMock()
-    tools = [
-        SimpleNamespace(
-            name="exact_calculate",
-            description="Deterministic high-precision arithmetic calculations.",
-            input_schema={"type": "object", "properties": {"operator": {"type": "string"}}},
-            required_roles=None,
-            categories=["math"],
-        ),
-        SimpleNamespace(
-            name="document_generate",
-            description="Deterministic document generation for PDF/DOCX artifacts.",
-            input_schema={"type": "object", "properties": {"format": {"type": "string"}}},
-            required_roles=None,
-            categories=["document"],
-        ),
-    ]
+    client = AsyncMock()
+    scoped_tool = SimpleNamespace(
+        name="exact_calculate",
+        scope=SimpleNamespace(value="calculator"),
+    )
+    gateway_response = SimpleNamespace(
+        error=None,
+        tool_id=7,
+        result={"answer": "42"},
+    )
 
-    with patch("src.mcp_transport.service.generate_embedding", new_callable=AsyncMock) as mock_embedding:
-        with patch("src.mcp_transport.service.search_tools_by_embedding", new_callable=AsyncMock) as mock_search:
-            with patch("src.mcp_transport.service.get_all_tools_cached", new_callable=AsyncMock) as mock_all_tools:
-                mock_embedding.return_value = [0.0] * 384
-                mock_search.return_value = []
-                mock_all_tools.return_value = tools
+    with patch("src.mcp_transport.service.get_all_tools_cached", new_callable=AsyncMock) as mock_all_tools:
+        with patch("src.mcp_transport.service.invoke_tool", new_callable=AsyncMock) as mock_invoke:
+            with patch("src.mcp_transport.service.increment_tool_usage", new_callable=AsyncMock) as mock_increment:
+                mock_all_tools.return_value = [scoped_tool]
+                mock_invoke.return_value = gateway_response
 
-                result = await handle_find_tools(
+                result = await handle_tools_call(
                     db=db,
-                    user=_user(),
-                    query="calculate",
-                    max_results=5,
+                    user=_user_all(),
+                    client=client,
+                    scope="calculator",
+                    name="exact_calculate",
+                    arguments={"operator": "add", "operands": ["40", "2"]},
                 )
 
-    assert result["found"] >= 1
-    returned_names = [tool["name"] for tool in result["tools"]]
-    assert "exact_calculate" in returned_names
-
-
-@pytest.mark.asyncio
-async def test_find_tools_applies_user_permissions_in_fallback_results():
-    db = AsyncMock()
-    tools = [
-        SimpleNamespace(
-            name="exact_calculate",
-            description="Deterministic high-precision arithmetic calculations.",
-            input_schema={"type": "object", "properties": {"operator": {"type": "string"}}},
-            required_roles=None,
-            categories=["math"],
-        ),
-        SimpleNamespace(
-            name="document_generate",
-            description="Deterministic document generation for PDF/DOCX artifacts.",
-            input_schema={"type": "object", "properties": {"format": {"type": "string"}}},
-            required_roles=None,
-            categories=["document"],
-        ),
-    ]
-
-    with patch("src.mcp_transport.service.generate_embedding", new_callable=AsyncMock) as mock_embedding:
-        with patch("src.mcp_transport.service.search_tools_by_embedding", new_callable=AsyncMock) as mock_search:
-            with patch("src.mcp_transport.service.get_all_tools_cached", new_callable=AsyncMock) as mock_all_tools:
-                mock_embedding.return_value = [0.0] * 384
-                mock_search.return_value = []
-                mock_all_tools.return_value = tools
-
-                result = await handle_find_tools(
-                    db=db,
-                    user=_limited_user(),
-                    query="document",
-                    max_results=5,
-                )
-
-    returned_names = [tool["name"] for tool in result["tools"]]
-    assert "document_generate" not in returned_names
+    assert result.isError is False
+    assert '"answer": "42"' in result.content[0].text
+    mock_increment.assert_awaited_once_with(db, 7)

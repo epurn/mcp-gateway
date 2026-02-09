@@ -26,6 +26,7 @@ async def create_audit_log(
         request_id=log_data.request_id,
         user_id=log_data.user_id,
         tool_name=log_data.tool_name,
+        endpoint_path=log_data.endpoint_path,
         status=log_data.status,
         duration_ms=log_data.duration_ms,
         error_code=log_data.error_code,
@@ -40,6 +41,7 @@ async def get_audit_logs(
     db: AsyncSession,
     user_id: str | None = None,
     tool_name: str | None = None,
+    endpoint_path: str | None = None,
     status: AuditStatus | None = None,
     start_time: datetime | None = None,
     end_time: datetime | None = None,
@@ -73,6 +75,10 @@ async def get_audit_logs(
     if tool_name is not None:
         query = query.where(AuditLog.tool_name == tool_name)
         count_query = count_query.where(AuditLog.tool_name == tool_name)
+
+    if endpoint_path is not None:
+        query = query.where(AuditLog.endpoint_path == endpoint_path)
+        count_query = count_query.where(AuditLog.endpoint_path == endpoint_path)
     
     if status is not None:
         query = query.where(AuditLog.status == status)

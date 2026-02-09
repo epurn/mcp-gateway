@@ -1,7 +1,7 @@
 """Static tool registry config loader."""
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field
@@ -13,6 +13,7 @@ class ToolConfig(BaseModel):
     name: str
     description: str
     backend_url: str
+    scope: Literal["calculator", "git", "docs"]
     risk_level: str = "low"
     required_roles: list[str] | None = None
     is_active: bool = True

@@ -2,14 +2,18 @@
 
 ```mermaid
 flowchart LR
-    Client[AI Agent]
+    Client[AI Agent / MCP Client]
+    Ingress[Nginx Ingress :8000]
     Gateway[MCP Gateway]
     DB[(PostgreSQL)]
     Calc[Calculator Tool]
     Docs[Document Generator]
     Git[Git Read-Only]
 
-    Client -->|JWT (iss/aud/exp/iat)| Gateway
+    Client -->|JWT + JSON-RPC| Ingress
+    Ingress -->|POST /calculator/sse| Gateway
+    Ingress -->|POST /git/sse| Gateway
+    Ingress -->|POST /docs/sse| Gateway
     Gateway -->|Audit Log| DB
 
     subgraph Internal_Network["Internal Tool Network (no host ports)"]

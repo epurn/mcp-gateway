@@ -2,6 +2,7 @@ tools:
   - name: "exact_calculate"
     description: "Deterministic high-precision arithmetic calculations."
     backend_url: "http://calculator:8000/mcp"
+    scope: "calculator"
     risk_level: "low"
     required_roles: []
     is_active: true
@@ -29,6 +30,7 @@ tools:
   - name: "exact_statistics"
     description: "Deterministic statistics (mean, median, variance, deviation)."
     backend_url: "http://calculator:8000/mcp"
+    scope: "calculator"
     risk_level: "low"
     required_roles: []
     is_active: true
@@ -58,6 +60,7 @@ tools:
   - name: "exact_convert_units"
     description: "Deterministic unit conversion."
     backend_url: "http://calculator:8000/mcp"
+    scope: "calculator"
     risk_level: "low"
     required_roles: []
     is_active: true
@@ -84,6 +87,7 @@ tools:
   - name: "exact_unit_arithmetic"
     description: "Deterministic arithmetic with units."
     backend_url: "http://calculator:8000/mcp"
+    scope: "calculator"
     risk_level: "low"
     required_roles: []
     is_active: true
@@ -121,6 +125,7 @@ tools:
   - name: "document_generate"
     description: "Deterministic document generation for PDF/DOCX artifacts."
     backend_url: "http://document_generator:8000/mcp"
+    scope: "docs"
     risk_level: "low"
     required_roles: []
     is_active: true

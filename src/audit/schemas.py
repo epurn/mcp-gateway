@@ -22,6 +22,7 @@ class AuditLogCreate(BaseModel):
         request_id: Correlation ID for tracing.
         user_id: Who invoked the tool.
         tool_name: Which tool was invoked.
+        endpoint_path: API endpoint path used for invocation.
         status: Outcome of the invocation.
         duration_ms: Call duration in milliseconds.
         error_code: Error code if failed.
@@ -30,6 +31,7 @@ class AuditLogCreate(BaseModel):
     request_id: str
     user_id: str
     tool_name: str
+    endpoint_path: str
     status: AuditStatus
     duration_ms: int = Field(ge=0)
     error_code: str | None = None
@@ -44,6 +46,7 @@ class AuditLogResponse(BaseModel):
         request_id: Correlation ID for tracing.
         user_id: Who invoked the tool.
         tool_name: Which tool was invoked.
+        endpoint_path: API endpoint path used for invocation.
         status: Outcome of the invocation.
         duration_ms: Call duration in milliseconds.
         error_code: Error code if failed.
@@ -54,6 +57,7 @@ class AuditLogResponse(BaseModel):
     request_id: str
     user_id: str
     tool_name: str
+    endpoint_path: str
     status: AuditStatus
     duration_ms: int
     error_code: str | None = None
@@ -67,6 +71,7 @@ class AuditLogQuery(BaseModel):
     Attributes:
         user_id: Filter by user.
         tool_name: Filter by tool.
+        endpoint_path: Filter by endpoint path.
         status: Filter by status.
         start_time: Filter logs after this time.
         end_time: Filter logs before this time.
@@ -76,6 +81,7 @@ class AuditLogQuery(BaseModel):
     
     user_id: str | None = None
     tool_name: str | None = None
+    endpoint_path: str | None = None
     status: AuditStatus | None = None
     start_time: datetime | None = None
     end_time: datetime | None = None

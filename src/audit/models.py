@@ -45,6 +45,7 @@ class AuditLog(Base):
         request_id: Correlation ID for distributed tracing.
         user_id: Who invoked the tool.
         tool_name: Which tool was invoked.
+        endpoint_path: API endpoint path used for invocation.
         status: Outcome of the invocation.
         duration_ms: How long the call took in milliseconds.
         error_code: Error code if failed (nullable).
@@ -82,6 +83,12 @@ class AuditLog(Base):
         index=True,
         comment="Which tool was invoked",
     )
+    endpoint_path: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+        comment="API endpoint path used for invocation",
+    )
     status: Mapped[AuditStatus] = mapped_column(
         SQLAlchemyEnum(AuditStatus, name="audit_status_enum"),
         nullable=False,
@@ -103,5 +110,5 @@ class AuditLog(Base):
         """String representation for debugging."""
         return (
             f"<AuditLog(id={self.id}, user={self.user_id}, "
-            f"tool={self.tool_name}, status={self.status.value})>"
+            f"tool={self.tool_name}, endpoint={self.endpoint_path}, status={self.status.value})>"
         )

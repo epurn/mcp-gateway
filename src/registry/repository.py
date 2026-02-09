@@ -4,7 +4,7 @@ from sqlalchemy import select, update, func, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import ARRAY
 
-from .models import Tool, PGVECTOR_AVAILABLE
+from .models import Tool, ToolScope, PGVECTOR_AVAILABLE
 
 
 async def get_all_active_tools(db: AsyncSession) -> list[Tool]:
@@ -17,6 +17,17 @@ async def get_all_active_tools(db: AsyncSession) -> list[Tool]:
         List of active Tool objects.
     """
     stmt = select(Tool).where(Tool.is_active == True).order_by(Tool.name)
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def get_active_tools_by_scope(db: AsyncSession, scope: str) -> list[Tool]:
+    """Fetch all active tools in a single scope."""
+    stmt = (
+        select(Tool)
+        .where(Tool.is_active == True, Tool.scope == ToolScope(scope))
+        .order_by(Tool.name)
+    )
     result = await db.execute(stmt)
     return list(result.scalars().all())
 
@@ -41,6 +52,7 @@ async def create_tool(
     name: str,
     description: str,
     backend_url: str,
+    scope: str,
     risk_level: str = "low",
     required_roles: list[str] | None = None,
     is_active: bool = True,
@@ -67,6 +79,7 @@ async def create_tool(
         name=name,
         description=description,
         backend_url=backend_url,
+        scope=ToolScope(scope),
         risk_level=RiskLevel(risk_level),
         required_roles=required_roles,
         is_active=is_active,

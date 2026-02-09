@@ -44,6 +44,7 @@ model_cache/*
 .agent/
 brain/
 *.gemini/
+kanban/
 
 # OS
 .DS_Store
